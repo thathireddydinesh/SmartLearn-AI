@@ -1,0 +1,25 @@
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Students can access only their own records.
+    match /users/{userId}/{document=**} {
+      allow read, write:
+        if request.auth != null
+        && request.auth.uid == userId;
+    }
+
+    // Public certificate verification.
+    // Anyone can check an exact certificate ID.
+    match /publicCertificates/{certificateId} {
+      allow get: if true;
+      allow list: if false;
+
+      // Only trusted backend services can issue certificates.
+      allow create, update, delete: if false;
+    }
+
+  }
+}

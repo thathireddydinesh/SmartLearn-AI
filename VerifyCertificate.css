@@ -1,0 +1,181 @@
+
+.verify-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 16px;
+  background: #f3f7fb;
+  font-family: Inter, Arial, sans-serif;
+}
+
+.verify-card {
+  width: 100%;
+  max-width: 620px;
+  padding: 40px;
+  border-radius: 20px;
+  background: #ffffff;
+  text-align: center;
+  box-shadow: 0 15px 50px rgba(20, 45, 70, 0.09);
+}
+
+.verify-logo {
+  color: #18334f;
+  font-size: 21px;
+  font-weight: 800;
+}
+
+.verify-logo span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  margin-right: 8px;
+  border-radius: 9px;
+  background: #139b91;
+  color: white;
+}
+
+.verify-logo b {
+  color: #139b91;
+}
+
+.verify-icon {
+  margin-top: 30px;
+  font-size: 48px;
+}
+
+.verify-label {
+  margin-top: 18px;
+  color: #139b91;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 2px;
+}
+
+.verify-card h1 {
+  margin: 10px 0;
+  color: #18334f;
+  font-size: 30px;
+}
+
+.verify-description {
+  color: #64748b;
+  line-height: 1.6;
+}
+
+.verify-id {
+  display: grid;
+  gap: 8px;
+  margin: 25px 0;
+  padding: 17px;
+  border: 1px solid #dce7ef;
+  border-radius: 12px;
+  background: #f8fafc;
+  overflow-wrap: anywhere;
+}
+
+.verify-id span,
+.verify-details span {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.verify-id strong {
+  color: #18334f;
+}
+
+.verify-loading {
+  padding: 18px;
+  color: #526174;
+}
+
+.verify-result {
+  margin-top: 20px;
+  padding: 24px;
+  border-radius: 14px;
+}
+
+.verify-result.valid {
+  border: 1px solid #a7e5c1;
+  background: #effbf3;
+}
+
+.verify-result.invalid {
+  border: 1px solid #fecaca;
+  background: #fff3f3;
+}
+
+.result-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 45px;
+  height: 45px;
+  border-radius: 50%;
+  background: #139b91;
+  color: white;
+  font-size: 25px;
+  font-weight: bold;
+}
+
+.invalid .result-icon {
+  background: #dc3545;
+}
+
+.verify-result h2 {
+  margin: 12px 0 6px;
+  color: #18334f;
+}
+
+.verify-result p {
+  color: #526174;
+  line-height: 1.5;
+}
+
+.verify-details {
+  display: grid;
+  gap: 15px;
+  margin-top: 22px;
+  text-align: left;
+}
+
+.verify-details div {
+  display: grid;
+  gap: 5px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #dce7ef;
+}
+
+.verify-details strong {
+  color: #18334f;
+}
+
+.verify-home {
+  display: inline-block;
+  margin-top: 25px;
+  color: #139b91;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.verify-home:hover {
+  text-decoration: underline;
+}
+
+.verify-footer {
+  margin-top: 30px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+@media (max-width: 600px) {
+  .verify-card {
+    padding: 25px 18px;
+  }
+
+  .verify-card h1 {
+    font-size: 25px;
+  }
+}

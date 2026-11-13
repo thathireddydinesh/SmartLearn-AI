@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build files
+dist/
+build/
+
+# Environment variables and secrets
+.env
+.env.local
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Firebase credentials
+firebase-service-account.json
+serviceAccountKey.json
+
+# Editor files
+.vscode/
+.idea/
+
+# Logs
+*.log
