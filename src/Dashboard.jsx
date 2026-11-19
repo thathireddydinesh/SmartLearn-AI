@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import "./Dashboard.css";
-import "./DashboardRolePanels.css";
 
 import { auth, db } from "./firebase";
 import QRCode from "qrcode";
@@ -22,7 +21,6 @@ import {
 import {
   onAuthStateChanged,
   updateProfile as updateAuthProfile,
-  signOut,
   sendPasswordResetEmail
 } from "firebase/auth";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, getBlob, deleteObject } from "firebase/storage";
@@ -47,6 +45,36 @@ const starterFlashcards = [
 ];
 
 
+// FEATURE 19 — PEER LEARNING CHALLENGES (curated practice questions with automatic scoring)
+const peerLearningChallenges = [
+  {
+    id: "python-foundations", title: "Python Foundations Sprint", course: "Python Programming", level: "Beginner", points: 30,
+    description: "Test variables, loops and basic Python output.",
+    questions: [
+      { id: "p1", prompt: "Which symbol is used for a single-line comment in Python?", options: ["//", "#", "<!--", "**"], answer: 1, explanation: "Python uses # to begin a single-line comment." },
+      { id: "p2", prompt: "What is the output of print(3 + 2 * 2)?", options: ["10", "7", "14", "9"], answer: 1, explanation: "Multiplication happens before addition, so 3 + 4 = 7." },
+      { id: "p3", prompt: "Which loop is commonly used to iterate over a list?", options: ["for", "switch", "repeat-until", "case"], answer: 0, explanation: "A for loop can visit each item in a list." }
+    ]
+  },
+  {
+    id: "web-basics", title: "Web Development Quick Challenge", course: "Web Development", level: "Beginner", points: 30,
+    description: "Check your understanding of HTML, CSS and JavaScript.",
+    questions: [
+      { id: "w1", prompt: "Which HTML element creates a hyperlink?", options: ["<link>", "<a>", "<href>", "<url>"], answer: 1, explanation: "The anchor element <a> creates a hyperlink." },
+      { id: "w2", prompt: "Which CSS property changes text colour?", options: ["font-style", "background", "color", "text-size"], answer: 2, explanation: "The color property sets the foreground text colour." },
+      { id: "w3", prompt: "Which keyword declares a block-scoped variable in JavaScript?", options: ["let", "echo", "define", "dim"], answer: 0, explanation: "let declares a block-scoped variable in JavaScript." }
+    ]
+  },
+  {
+    id: "database-basics", title: "Database Essentials Challenge", course: "Database Management", level: "Beginner", points: 30,
+    description: "Practise SQL basics, keys and query structure.",
+    questions: [
+      { id: "d1", prompt: "Which SQL command retrieves data from a table?", options: ["GET", "OPEN", "SELECT", "FETCH ALL"], answer: 2, explanation: "SELECT retrieves rows from one or more tables." },
+      { id: "d2", prompt: "What does a primary key do?", options: ["Uniquely identifies each row", "Sorts every column", "Encrypts the table", "Deletes duplicates automatically"], answer: 0, explanation: "A primary key uniquely identifies each record in a table." },
+      { id: "d3", prompt: "Which clause filters rows in a SQL query?", options: ["ORDER BY", "WHERE", "GROUP BY", "JOIN"], answer: 1, explanation: "WHERE filters rows based on a condition." }
+    ]
+  }
+];
 
 // Browser-based Python playground. Student code runs in a dedicated Web Worker.
 function PythonCodeEditor({ courseType = "python" }) {
@@ -904,6 +932,12 @@ function WiZiAISmartTutor() {
   const [sending, setSending] = useState(false);
   const [tutorError, setTutorError] = useState("");
   const [tutorNotice, setTutorNotice] = useState("Ask a question to start learning with WiZiAI.");
+  const [language, setLanguage] = useState("English");
+  const [listening, setListening] = useState(false);
+  const [pdfText, setPdfText] = useState("");
+  const [pdfName, setPdfName] = useState("");
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [codeMode, setCodeMode] = useState(false);
 
   const tutorCourses = ["Python Programming", "Java Programming", "Web Development", "Database Management", "Data Structures", "Artificial Intelligence", "Mathematics", "Other"];
 
@@ -956,9 +990,9 @@ function WiZiAISmartTutor() {
     setTutorNotice("Previous conversation loaded.");
   }
 
-  async function sendQuestion(event) {
+  async function sendQuestion(event, overrideQuestion = null) {
     event?.preventDefault?.();
-    const question = draft.trim();
+    const question = String(overrideQuestion ?? draft).trim();
     if (!question || sending) return;
     if (!tutorUser) {
       setTutorError("Please sign in to use WiZiAI and save your conversation.");
@@ -981,7 +1015,9 @@ function WiZiAISmartTutor() {
         body: JSON.stringify({
           message: question,
           course,
-          history: messages.slice(-12).map(({ role, content }) => ({ role, content }))
+          history: messages.slice(-12).map(({ role, content }) => ({ role, content })),
+          language,
+          document_context: pdfText
         })
       });
       const data = await response.json().catch(() => ({}));
@@ -1031,6 +1067,77 @@ function WiZiAISmartTutor() {
     }
   }
 
+
+  function startVoiceQuestion() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setTutorError("Voice input is not supported by this browser. Please use the latest Google Chrome or type your question.");
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = language === "Telugu" ? "te-IN" : language === "Hindi" ? "hi-IN" : "en-IN";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onstart = () => { setListening(true); setTutorError(""); setTutorNotice("Listening… speak your question now."); };
+    recognition.onresult = (event) => {
+      const spoken = event.results?.[0]?.[0]?.transcript || "";
+      setDraft((current) => current ? `${current} ${spoken}` : spoken);
+      setTutorNotice("Voice question added. Review it and press Send question.");
+    };
+    recognition.onerror = (event) => setTutorError(`Voice input failed (${event.error || "unknown error"}). Check microphone permission and try again.`);
+    recognition.onend = () => setListening(false);
+    try { recognition.start(); } catch { setListening(false); setTutorError("Could not start microphone input. Try again."); }
+  }
+
+  async function uploadTutorPdf(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!tutorUser) { setTutorError("Please sign in before uploading study notes."); event.target.value = ""; return; }
+    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+      setTutorError("Please choose a PDF file."); event.target.value = ""; return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setTutorError("PDF must be 8 MB or smaller."); event.target.value = ""; return;
+    }
+    try {
+      setPdfBusy(true); setTutorError(""); setTutorNotice("Reading your PDF notes…");
+      const form = new FormData();
+      form.append("file", file);
+      const response = await fetch(`${API_URL}/tutor-pdf`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${await tutorUser.getIdToken()}` },
+        body: form
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "PDF processing failed.");
+      setPdfText(data.text || "");
+      setPdfName(data.filename || file.name);
+      setTutorNotice(`Loaded ${data.filename || file.name} (${data.page_count || "?"} pages). Ask a question about these notes.`);
+    } catch (error) {
+      setTutorError(`Could not read PDF: ${error.message}`);
+      setTutorNotice("Try another text-based PDF.");
+    } finally {
+      setPdfBusy(false);
+      event.target.value = "";
+    }
+  }
+
+  function askForCodeExplanation() {
+    setCodeMode(true);
+    setDraft((current) => current
+      ? `Explain this code step by step, line by line, and show its output:\n\n${current}`
+      : "Please paste your code here. Explain it step by step, line by line, describe the output, and explain any errors.");
+  }
+
+  function generateQuizFromConversation() {
+    if (!messages.some((item) => item.role === "assistant" || item.role === "user")) {
+      setTutorError("Ask WiZiAI a question first. Then you can generate a quiz from the conversation.");
+      return;
+    }
+    const prompt = "Based on the learning conversation above, create a 5-question multiple-choice quiz. Give four options (A-D) for each question, identify the correct answer, and explain why it is correct. Use the selected explanation language.";
+    sendQuestion(null, prompt);
+  }
+
   async function deleteConversation(item) {
     if (!tutorUser || !window.confirm("Delete this conversation and its saved messages?")) return;
     try {
@@ -1050,7 +1157,7 @@ function WiZiAISmartTutor() {
   return (
     <section className="dashboard-section" id="smart-tutor">
       <div className="dashboard-section-heading">
-        <div><span>WIZIAI LEARNING ASSISTANT</span><h2>WiZiAI Smart Tutor</h2><p className="section-description">Ask academic questions, explore concepts step by step, and keep your learning conversations in one place.</p></div>
+        <div><span>WIZIAI LEARNING ASSISTANT</span><h2>WiZiAI Smart Tutor</h2><p className="section-description">Ask by voice or text, upload PDF notes, choose Telugu, Hindi or English, and practise with AI-generated quizzes.</p></div>
         <span className="settings-status">AI learning assistant</span>
       </div>
       <div className="wizia-layout" style={{ display: "grid", gridTemplateColumns: "minmax(240px, 0.8fr) minmax(0, 2fr)", gap: 20, alignItems: "start", width: "100%" }}>
@@ -1073,6 +1180,25 @@ function WiZiAISmartTutor() {
             </label>
             <button type="button" style={{ ...secondary, minHeight: 44, whiteSpace: "nowrap" }} onClick={startNewChat}>Clear chat</button>
           </div>
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "end", margin: "0 0 14px" }}>
+            <label style={{ display: "grid", gap: 5, color: "#18334f", fontWeight: 650, flex: "1 1 180px" }}>
+              Explanation language
+              <select value={language} onChange={(event) => setLanguage(event.target.value)} style={{ minHeight: 42, padding: 9, border: "1px solid #d7e1eb", borderRadius: 9, background: "#fff", color: "#18334f", font: "inherit" }}>
+                <option>English</option><option>Telugu</option><option>Hindi</option>
+              </select>
+            </label>
+            <label style={{ display: "grid", gap: 5, color: "#18334f", fontWeight: 650, flex: "1 1 220px" }}>
+              Upload PDF notes (max 8 MB)
+              <input type="file" accept="application/pdf,.pdf" onChange={uploadTutorPdf} disabled={pdfBusy} />
+            </label>
+            {pdfName && <span style={{ color: "#087e70", fontSize: 12 }}>Attached: {pdfName} <button type="button" style={{ ...secondary, padding: "4px 8px" }} onClick={() => { setPdfText(""); setPdfName(""); }}>Remove</button></span>}
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+            <button type="button" style={secondary} onClick={startVoiceQuestion} disabled={listening}>{listening ? "Listening…" : "🎙️ Speak question"}</button>
+            <button type="button" style={secondary} onClick={askForCodeExplanation}>{"</>"} Explain code step by step</button>
+            <button type="button" style={secondary} onClick={generateQuizFromConversation} disabled={sending || messages.length === 0}>Generate quiz from chat</button>
+          </div>
           <div aria-live="polite" style={{ boxSizing: "border-box", width: "100%", minWidth: 0, minHeight: 320, maxHeight: 520, overflowY: "auto", padding: 18, borderRadius: 13, background: "#f5f8fc", display: "flex", flexDirection: "column", gap: 12 }}>
             {messages.length === 0 && <div style={{ margin: "auto", textAlign: "center", maxWidth: 440, padding: 24 }}><div style={{ fontSize: 34 }}>✨</div><h3 style={{ color: "#18334f" }}>What would you like to learn?</h3><p style={{ color: "#64748b", lineHeight: 1.6 }}>Ask for a concept explanation, a worked example, help understanding code, or a short practice quiz.</p><div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 8 }}><button type="button" style={secondary} onClick={() => setDraft("Explain Python functions with a simple example.")}>Explain a concept</button><button type="button" style={secondary} onClick={() => setDraft("Help me debug this code and explain the error:")}>Debug code</button><button type="button" style={secondary} onClick={() => setDraft("Give me 5 practice questions about this subject.")}>Practice questions</button></div></div>}
             {messages.map((message, index) => <div key={`${message.createdAt || index}-${index}`} style={{ alignSelf: message.role === "user" ? "flex-end" : "stretch", maxWidth: message.role === "user" ? "88%" : "100%", background: message.role === "user" ? "#dff5f0" : "#fff", border: "1px solid #e1e8ef", borderRadius: 11, padding: 12, color: "#18334f", whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.65 }}><strong style={{ display: "block", fontSize: 11, color: message.role === "user" ? "#087e70" : "#526174", marginBottom: 5 }}>{message.role === "user" ? "YOU" : "WIZIAI"}</strong>{message.content}</div>)}
@@ -1081,7 +1207,7 @@ function WiZiAISmartTutor() {
           <form onSubmit={sendQuestion} style={{ marginTop: 16, display: "grid", gap: 9, width: "100%", minWidth: 0 }}>
             <label style={{ display: "grid", gap: 8, width: "100%", minWidth: 0, color: "#18334f", fontWeight: 650 }}>
               Your question
-              <textarea rows={4} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Ask a question about your course..." maxLength={6000} style={{ display: "block", width: "100%", minWidth: 0, minHeight: 116, boxSizing: "border-box", resize: "vertical", padding: "13px 14px", border: "1px solid #d7e1eb", borderRadius: 11, background: "#fff", color: "#18334f", font: "inherit", lineHeight: 1.5 }} />
+              <textarea rows={4} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={pdfName ? `Ask a question about ${pdfName}...` : "Ask a question about your course..."} maxLength={6000} style={{ display: "block", width: "100%", minWidth: 0, minHeight: 116, boxSizing: "border-box", resize: "vertical", padding: "13px 14px", border: "1px solid #d7e1eb", borderRadius: 11, background: "#fff", color: "#18334f", font: "inherit", lineHeight: 1.5 }} />
             </label>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 9 }}><small style={{ color: "#64748b" }}>{draft.length}/6000 characters · Check important answers with your course materials.</small><button type="submit" style={action} disabled={sending || !draft.trim()}>{sending ? "Thinking…" : "Send question ➤"}</button></div>
           </form>
@@ -1157,6 +1283,8 @@ function AssessmentCenter({ accountRole }) {
   async function createAssessment(event) {
     event.preventDefault();
     if (notes.trim().length < 20) { setError("Add at least 20 characters of source notes."); return; }
+    if (!Number.isInteger(Number(count)) || Number(count) < 1 || Number(count) > 500) { setError("Choose between 1 and 500 questions."); return; }
+    if (!Number.isInteger(Number(duration)) || Number(duration) < 1 || Number(duration) > 600) { setError("Choose a time limit between 1 and 600 minutes."); return; }
     try {
       setBusy(true); setError(""); setMessage("");
       const generated = await api("/assessments/generate", { method: "POST", body: JSON.stringify({ topic: title.trim() || course, notes: notes.trim(), question_count: Number(count), difficulty }) });
@@ -1206,18 +1334,28 @@ function AssessmentCenter({ accountRole }) {
     <div className="dashboard-section-heading"><div><span>FEATURE 16 · SECURE ASSESSMENTS</span><h2>Assessment Center</h2><p className="section-description">Faculty-published timed assessments with backend grading and protected answer keys.</p></div></div>
     {error && <div className="demo-result" role="alert"><p>{error}</p></div>}
     {message && <p className="demo-note" role="status">{message}</p>}
-    {staff && <form className="workspace-card" onSubmit={createAssessment} style={{padding:22, marginBottom:20}}>
-      <h3 style={{marginTop:0}}>Create assessment from study notes</h3>
-      <div className="form-grid">
-        <label>Assessment title<input value={title} onChange={e=>setTitle(e.target.value)} placeholder="e.g. Python Fundamentals Test" /></label>
-        <label>Course<select value={course} onChange={e=>setCourse(e.target.value)}>{["Python Programming","Java Programming","Web Development","Data Structures","Artificial Intelligence","Database Management"].map(x=><option key={x}>{x}</option>)}</select></label>
-        <label>Difficulty<select value={difficulty} onChange={e=>setDifficulty(e.target.value)}><option>Beginner</option><option>Intermediate</option><option>Advanced</option></select></label>
-        <label>Questions<select value={count} onChange={e=>setCount(e.target.value)}><option value="3">3</option><option value="5">5</option><option value="10">10</option></select></label>
-        <label>Time limit (minutes)<input type="number" min="1" max="180" value={duration} onChange={e=>setDuration(e.target.value)} /></label>
+    {staff && <form className="workspace-card" onSubmit={createAssessment} style={{padding:24, marginBottom:20, borderRadius:18, border:"1px solid #e6edf5", boxShadow:"0 8px 28px rgba(15,35,65,.05)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:14,flexWrap:"wrap",marginBottom:20}}>
+        <div><span style={{color:"#16b8a9",fontSize:12,fontWeight:800,letterSpacing:1.3}}>FACULTY WORKSPACE</span><h3 style={{margin:"5px 0 6px",fontSize:23}}>Create a new assessment</h3><p className="demo-note" style={{margin:0}}>Build a timed assessment from your course study notes.</p></div>
+        <span style={{background:"#e9fbf8",color:"#087e70",padding:"8px 12px",borderRadius:10,fontSize:12,fontWeight:750}}>SECURE ASSESSMENT</span>
       </div>
-      <label className="full-label">Study notes<textarea rows="5" value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Paste the source material used to generate assessment questions (at least 20 characters)." /></label>
-      <button className="primary-action" type="submit" disabled={busy}>{busy ? "Creating…" : "Generate assessment draft"}</button>
-      <p className="demo-note">Question generation currently uses your configured local rule-based FastAPI generator. Review the draft before publishing.</p>
+      <div className="form-grid">
+        <label>Assessment title<input required value={title} onChange={e=>setTitle(e.target.value)} placeholder="e.g. Java Programming – Unit 1 Test" /></label>
+        <label>Course<select value={course} onChange={e=>setCourse(e.target.value)}>{["Python Programming","Java Programming","Web Development","Data Structures","Artificial Intelligence","Database Management"].map(x=><option key={x}>{x}</option>)}</select></label>
+        <label style={{gridColumn:"1 / -1"}}>Difficulty level
+          <div role="group" aria-label="Difficulty level" style={{display:"flex",gap:9,flexWrap:"wrap",marginTop:8}}>
+            {["Beginner","Intermediate","Advanced"].map(level=><button key={level} type="button" aria-pressed={difficulty===level} onClick={()=>setDifficulty(level)} style={{border:`1px solid ${difficulty===level?"#0aa99b":"#dbe5ef"}`,background:difficulty===level?"#e8faf7":"#fff",color:difficulty===level?"#087e70":"#334155",borderRadius:10,padding:"10px 18px",fontWeight:750,cursor:"pointer"}}>{level}</button>)}
+          </div>
+        </label>
+        <label>Number of questions<input type="number" min="1" max="500" step="1" required value={count} onChange={e=>setCount(e.target.value)} /><small style={{display:"block",color:"#64748b",fontWeight:400,marginTop:5}}>Choose the number you need (up to 500 per assessment).</small></label>
+        <label>Time limit (minutes)<input type="number" min="1" max="600" required value={duration} onChange={e=>setDuration(e.target.value)} /></label>
+      </div>
+      <label className="full-label" style={{display:"block",marginTop:18}}>Study notes<textarea rows="7" required value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Paste the lesson notes, definitions, examples and key concepts used to create the questions (at least 20 characters)." /></label>
+      <div style={{display:"flex",alignItems:"center",gap:9,flexWrap:"wrap",marginTop:16}}>
+        <button className="primary-action" type="submit" disabled={busy}>{busy ? "Generating questions…" : "✦ Generate assessment draft"}</button>
+        <span className="demo-note">Your draft is saved privately until you publish it.</span>
+      </div>
+      <p className="demo-note" style={{marginTop:12}}>Review generated questions before publishing. The maximum question count is subject to your backend generator and hosting resources.</p>
     </form>}
 
     {active && <div className="workspace-card" style={{padding:22,marginBottom:20}}>
@@ -1240,11 +1378,25 @@ function CareerPlacementCenter({ accountRole }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [skills, setSkills] = useState("Python, HTML, CSS, JavaScript");
+  const [interests, setInterests] = useState("Software Development, AI");
+  const [targetRole, setTargetRole] = useState("Full Stack Developer");
+  const [roadmap, setRoadmap] = useState([]);
   const [applications, setApplications] = useState([]);
   const [company, setCompany] = useState("");
   const [jobTitle, setJobTitle] = useState("");
   const [jobStatus, setJobStatus] = useState("Interested");
   const [resume, setResume] = useState({name:"", email:"", phone:"", summary:"", education:"", projects:"", links:""});
+  const [interviewIndex, setInterviewIndex] = useState(0);
+  const [answer, setAnswer] = useState("");
+  const [showHint, setShowHint] = useState(false);
+  const [recommendationLoading, setRecommendationLoading] = useState(false);
+  const interviewQuestions = [
+    {q:"Tell me about yourself and the projects you have built.", hint:"Use a concise present–past–future structure. Mention your strongest project and your contribution."},
+    {q:"How would you explain the difference between a process and a thread?", hint:"Compare memory, execution context, communication, and overhead."},
+    {q:"Describe a difficult bug you solved. How did you investigate it?", hint:"Explain the symptoms, reproduction, debugging steps, root cause, fix, and result."},
+    {q:"What happens when you enter a URL in a browser?", hint:"Cover DNS, connection/TLS, HTTP request, server response, and browser rendering."}
+  ];
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, user => setUid(user?.uid || ""));
     return () => unsub();
@@ -1257,6 +1409,8 @@ function CareerPlacementCenter({ accountRole }) {
         const snap = await getDoc(doc(db, "users", uid, "careerCenter", "workspace"));
         if (alive && snap.exists()) {
           const d = snap.data();
+          setSkills(d.skills || "Python, HTML, CSS, JavaScript"); setInterests(d.interests || "Software Development, AI");
+          setTargetRole(d.targetRole || "Full Stack Developer"); setRoadmap(Array.isArray(d.roadmap) ? d.roadmap : []);
           setApplications(Array.isArray(d.applications) ? d.applications : []);
           setResume({...{name:"",email:"",phone:"",summary:"",education:"",projects:"",links:""}, ...(d.resume || {})});
         }
@@ -1269,11 +1423,24 @@ function CareerPlacementCenter({ accountRole }) {
     if (!uid) { setError("Please sign in again to save your career workspace."); return; }
     setSaving(true); setError(""); setMessage("");
     try {
-      const payload = {applications, resume, ...patch, updatedAt: serverTimestamp()};
+      const payload = {skills, interests, targetRole, roadmap, applications, resume, ...patch, updatedAt: serverTimestamp()};
       await setDoc(doc(db, "users", uid, "careerCenter", "workspace"), payload, {merge:true});
       setMessage("Your career workspace has been saved securely.");
     } catch (e) { setError(e.message || "Unable to save your career workspace."); }
     finally { setSaving(false); }
+  }
+  async function buildRoadmap() {
+    setRecommendationLoading(true); setError(""); setMessage("");
+    try {
+      const user = auth.currentUser;
+      if (!user) throw new Error("Please sign in again.");
+      const token = await user.getIdToken();
+      const response = await fetch(`${API_URL}/career/recommendations`, {method:"POST", headers:{"Content-Type":"application/json", Authorization:`Bearer ${token}`}, body:JSON.stringify({skills:skills.split(",").map(x=>x.trim()).filter(Boolean), interests:interests.split(",").map(x=>x.trim()).filter(Boolean), target_role:targetRole})});
+      const data = await response.json(); if (!response.ok) throw new Error(data.detail || "Could not generate recommendations.");
+      setRoadmap(data.roadmap || []); await saveWorkspace({roadmap:data.roadmap || []});
+      setMessage("Career roadmap generated. Review the suggested learning steps and track your progress.");
+    } catch (e) { setError(e.message || "Career roadmap request failed."); }
+    finally { setRecommendationLoading(false); }
   }
   async function addApplication(e) {
     e.preventDefault(); if (!company.trim() || !jobTitle.trim()) return;
@@ -1283,22 +1450,39 @@ function CareerPlacementCenter({ accountRole }) {
   async function updateApplication(id, status) { const next=applications.map(a=>a.id===id?{...a,status}:a); setApplications(next); await saveWorkspace({applications:next}); }
   async function removeApplication(id) { const next=applications.filter(a=>a.id!==id); setApplications(next); await saveWorkspace({applications:next}); }
   async function updateResume(key, value) { const next={...resume,[key]:value}; setResume(next); }
+  const completedSteps = roadmap.filter(x=>x.completed).length;
+  const progress = roadmap.length ? Math.round(completedSteps / roadmap.length * 100) : 0;
   const fieldStyle={width:"100%",padding:"11px 12px",border:"1px solid #dbe4ee",borderRadius:9,background:"#fff",color:"#18334f",font:"inherit",boxSizing:"border-box"};
   if (loading) return <section className="dashboard-section" id="career-center"><p className="demo-note">Loading your career workspace…</p></section>;
   return <section className="dashboard-section" id="career-center">
-    <div className="dashboard-section-heading"><div><span>FEATURE 17 · CAREER DEVELOPMENT</span><h2>Career & Placement Readiness Center</h2><p className="section-description">Create a resume and track your job applications.</p></div></div>
+    <div className="dashboard-section-heading"><div><span>FEATURE 17 · CAREER DEVELOPMENT</span><h2>Career & Placement Readiness Center</h2><p className="section-description">Build your career roadmap, prepare for interviews, create a resume, and track applications.</p></div></div>
     {error && <div className="demo-result" role="alert"><p>{error}</p></div>}{message && <p className="demo-note" role="status">{message}</p>}
     <div className="dashboard-stats" style={{marginBottom:20}}>
-      {[ ["💼","Applications",String(applications.length)] ].map(([icon,label,value])=><div className="dashboard-stat-card" key={label}><span>{icon}</span><small>{label}</small><strong style={{fontSize:17}}>{value}</strong></div>)}
+      {[ ["🎯","Target role",targetRole], ["🧭","Roadmap progress",`${progress}%`], ["💼","Applications",String(applications.length)], ["🧩","Roadmap steps",`${completedSteps}/${roadmap.length}`] ].map(([icon,label,value])=><div className="dashboard-stat-card" key={label}><span>{icon}</span><small>{label}</small><strong style={{fontSize:17}}>{value}</strong></div>)}
     </div>
     <div className="workspace-card" style={{padding:22,marginBottom:18}}>
-      <h3 style={{marginTop:0}}>Resume builder</h3><p className="demo-note">Fill in your details to create a clean, copy-ready resume draft. Your information is saved in your private user workspace.</p>
+      <h3 style={{marginTop:0}}>1. Personalized career roadmap</h3>
+      <div className="form-grid">
+        <label>Target career role<input style={fieldStyle} value={targetRole} onChange={e=>setTargetRole(e.target.value)} placeholder="e.g. Full Stack Developer" /></label>
+        <label>Career interests<input style={fieldStyle} value={interests} onChange={e=>setInterests(e.target.value)} placeholder="AI, Web Development, Data" /></label>
+      </div>
+      <label className="full-label">Your current skills (comma-separated)<textarea style={fieldStyle} rows="2" value={skills} onChange={e=>setSkills(e.target.value)} /></label>
+      <button className="primary-action" type="button" onClick={buildRoadmap} disabled={recommendationLoading}>{recommendationLoading?"Building roadmap…":"Generate career roadmap"}</button>
+      <p className="demo-note">Recommendations are generated by the authenticated SmartLearn backend using transparent role/skill matching. They are guidance, not a hiring guarantee.</p>
+      {roadmap.length>0 && <div style={{display:"grid",gap:10,marginTop:16}}>{roadmap.map((step,i)=><label key={step.id || i} style={{display:"flex",gap:12,alignItems:"start",padding:13,border:"1px solid #e2e8f0",borderRadius:11}}><input type="checkbox" checked={!!step.completed} onChange={async e=>{const next=roadmap.map((x,j)=>j===i?{...x,completed:e.target.checked}:x);setRoadmap(next);await saveWorkspace({roadmap:next});}}/><span><strong>{step.title}</strong><span style={{display:"block",fontSize:13,color:"#64748b",marginTop:4}}>{step.description}</span></span></label>)}</div>}
+    </div>
+    <div className="workspace-card" style={{padding:22,marginBottom:18}}>
+      <h3 style={{marginTop:0}}>2. Resume builder</h3><p className="demo-note">Fill in your details to create a clean, copy-ready resume draft. Your information is saved in your private user workspace.</p>
       <div className="form-grid">{[["name","Full name"],["email","Email"],["phone","Phone"],["links","LinkedIn / Portfolio URL"]].map(([key,label])=><label key={key}>{label}<input style={fieldStyle} value={resume[key]} onChange={e=>updateResume(key,e.target.value)} /></label>)}</div>
       {[["summary","Professional summary"],["education","Education"],["projects","Projects and achievements"]].map(([key,label])=><label className="full-label" key={key}>{label}<textarea style={fieldStyle} rows="3" value={resume[key]} onChange={e=>updateResume(key,e.target.value)} placeholder={`Add your ${label.toLowerCase()}…`} /></label>)}
       <div style={{display:"flex",gap:10,flexWrap:"wrap"}}><button className="primary-action" type="button" disabled={saving} onClick={()=>saveWorkspace()}>Save resume</button><button className="secondary-action" type="button" onClick={()=>{const text=[resume.name,resume.email,resume.phone,resume.links,"", "PROFESSIONAL SUMMARY",resume.summary,"", "EDUCATION",resume.education,"", "PROJECTS",resume.projects].join("\n"); const blob=new Blob([text],{type:"text/plain"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="SmartLearn_Resume.txt";a.click();URL.revokeObjectURL(url);}}>Export resume (.txt)</button></div>
     </div>
+    <div className="workspace-card" style={{padding:22,marginBottom:18}}>
+      <h3 style={{marginTop:0}}>3. Interview practice</h3><p className="demo-note">Practice answering common technical and behavioral interview questions.</p>
+      <div style={{padding:16,borderRadius:12,background:"#f5f8fc",border:"1px solid #e2e8f0"}}><small>QUESTION {interviewIndex+1} OF {interviewQuestions.length}</small><h3>{interviewQuestions[interviewIndex].q}</h3><textarea style={fieldStyle} rows="4" value={answer} onChange={e=>setAnswer(e.target.value)} placeholder="Write your practice answer here…"/><div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:10}}><button type="button" className="secondary-action" onClick={()=>setShowHint(v=>!v)}>{showHint?"Hide hint":"Show answer guidance"}</button><button type="button" className="secondary-action" onClick={()=>{setInterviewIndex((interviewIndex+1)%interviewQuestions.length);setAnswer("");setShowHint(false);}}>Next question →</button></div>{showHint&&<p className="demo-note" style={{marginTop:12}}>{interviewQuestions[interviewIndex].hint}</p>}</div>
+    </div>
     <div className="workspace-card" style={{padding:22}}>
-      <h3 style={{marginTop:0}}>Job & internship application tracker</h3>
+      <h3 style={{marginTop:0}}>4. Job & internship application tracker</h3>
       <form onSubmit={addApplication}><div className="form-grid"><label>Company<input style={fieldStyle} value={company} onChange={e=>setCompany(e.target.value)} placeholder="Company name" required /></label><label>Role / internship title<input style={fieldStyle} value={jobTitle} onChange={e=>setJobTitle(e.target.value)} placeholder="e.g. Software Intern" required /></label><label>Status<select style={fieldStyle} value={jobStatus} onChange={e=>setJobStatus(e.target.value)}>{["Interested","Applied","Assessment","Interview","Offer","Rejected"].map(x=><option key={x}>{x}</option>)}</select></label></div><button className="primary-action" type="submit" disabled={saving}>Add application</button></form>
       {applications.length===0?<p className="demo-note">No applications tracked yet. Add a job or internship to get started.</p>:<div style={{display:"grid",gap:10,marginTop:16}}>{applications.map(a=><div key={a.id} style={{display:"flex",gap:12,alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",padding:13,border:"1px solid #e2e8f0",borderRadius:10}}><div><strong>{a.title}</strong><p className="demo-note" style={{margin:"4px 0 0"}}>{a.company}</p></div><div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}><select aria-label={`Status for ${a.title}`} style={{...fieldStyle,width:"auto"}} value={a.status} onChange={e=>updateApplication(a.id,e.target.value)}>{["Interested","Applied","Assessment","Interview","Offer","Rejected"].map(x=><option key={x}>{x}</option>)}</select><button type="button" className="secondary-action" onClick={()=>removeApplication(a.id)}>Remove</button></div></div>)}</div>}
     </div>
@@ -1418,70 +1602,198 @@ function AccessibilityLearningAssistant({ onNavigate, navigationItems = [] }) {
   }
 
   function normalizeVoiceCommand(value) {
-    return String(value || "").toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, " ").replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim()
-      .replace(/^(please\s+)?(open|go to|navigate to|show|take me to|switch to)\s+/, "");
+    return String(value || "")
+      .toLowerCase()
+      .normalize("NFKC")
+      .replace(/[^\p{L}\p{N}\s-]/gu, " ")
+      .replace(/[-_]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/^(?:(?:please|kindly)\s+)?(?:can you\s+)?(?:please\s+)?(?:open|go to|navigate to|show|take me to|switch to|launch)\s+/, "")
+      .replace(/^(?:the|my)\s+/, (match) => match.toLowerCase() === "the " ? "" : "my ");
   }
 
   function startVoiceNavigation() {
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
     if (!Recognition) {
-      setError("Voice navigation is not available in this browser. Try Chrome or use the navigation menu.");
+      setError("Voice navigation is not available in this browser. Try Google Chrome or use the navigation menu.");
       return;
     }
+
     const recognition = new Recognition();
     recognition.lang = voiceNavigationLanguage;
     recognition.interimResults = false;
-    recognition.maxAlternatives = 3;
-    recognition.onstart = () => { setListening(true); setError(""); setMessage("Listening for a navigation command…"); };
+    recognition.maxAlternatives = 5;
+
+    recognition.onstart = () => {
+      setListening(true);
+      setError("");
+      setMessage("Listening for a navigation command…");
+    };
+
     recognition.onend = () => setListening(false);
-    recognition.onerror = (event) => { setListening(false); setError(`Voice navigation error: ${event.error || "microphone unavailable"}.`); };
+
+    recognition.onerror = (event) => {
+      setListening(false);
+      setError(`Voice navigation error: ${event.error || "microphone unavailable"}. Check microphone permission and try again.`);
+    };
+
     recognition.onresult = (event) => {
-      const alternatives = Array.from(event.results?.[0] || []).map((item) => item.transcript || "");
-      const candidates = alternatives.map(normalizeVoiceCommand).filter(Boolean);
-      const aliases = {
-        "my course": "my courses", "course": "my courses", "courses": "my courses",
-        "study material": "study materials", "material": "study materials",
-        "summary": "smart summaries", "summaries": "smart summaries",
-        "flashcard": "flashcards", "flash card": "flashcards",
-        "timetable": "weekly timetable", "reminders": "reminders notifications",
-        "notifications": "reminders notifications", "goals": "learning goals streaks",
-        "groups": "study groups", "forum": "discussion forum",
-"certificates": "my certificates", "resources": "learning resources",
-        "placement": "career placement", "career": "career placement", "assessment": "assessment center",
-        "quiz": "quiz generator", "profile": "my profile", "preferences": "settings", "home": "dashboard"
-      };
-      const available = navigationItems.map(([id, , label]) => ({ id, label: String(label || "").replace(/\s*\(\d+\)\s*$/, "") }));
-      let match = null;
-      let matchedPhrase = "";
+      const alternatives = Array.from(event.results?.[0] || [])
+        .map((item) => item.transcript || "")
+        .filter(Boolean);
+
+      const candidates = alternatives
+        .map((transcript) => ({
+          original: transcript,
+          normalized: normalizeVoiceCommand(transcript)
+        }))
+        .filter((item) => item.normalized);
+
+      // External destinations are kept separate from dashboard sections.
+      // These commands open a new tab; they do not change the current dashboard.
+      const externalSites = [
+        { names: ["youtube", "you tube"], url: "https://www.youtube.com", label: "YouTube" }
+      ];
+
       for (const candidate of candidates) {
-        const phrase = aliases[candidate] || candidate;
-        match = available.find((item) => {
-          const idPhrase = normalizeVoiceCommand(item.id);
-          const labelPhrase = normalizeVoiceCommand(item.label);
-          return phrase === idPhrase || phrase === labelPhrase ||
-            (phrase.length >= 5 && (idPhrase.includes(phrase) || labelPhrase.includes(phrase)));
-        });
+        const externalMatch = externalSites.find((site) =>
+          site.names.some((name) =>
+            candidate.normalized === name ||
+            candidate.normalized === `website ${name}` ||
+            candidate.normalized === `${name} website`
+          )
+        );
+
+        if (externalMatch) {
+          const opened = window.open(externalMatch.url, "_blank", "noopener,noreferrer");
+          if (opened) {
+            setMessage(`Opening ${externalMatch.label} in a new tab.`);
+            setError("");
+          } else {
+            setError(`Your browser blocked the ${externalMatch.label} tab. Allow pop-ups for this website and try again.`);
+          }
+          return;
+        }
+      }
+
+      const aliases = {
+        "home": "dashboard",
+        "main page": "dashboard",
+        "back": "dashboard",
+        "go back": "dashboard",
+        "back to home": "dashboard",
+        "my course": "my courses",
+        "course": "my courses",
+        "courses": "my courses",
+        "ai tools": "ai study tools",
+        "study tool": "ai study tools",
+        "study tools": "ai study tools",
+        "tutor": "wiziai smart tutor",
+        "smart tutor": "wiziai smart tutor",
+        "quiz": "quiz generator",
+        "assessment": "assessment center",
+        "career": "career placement",
+        "placement": "career placement",
+        "summary": "smart summaries",
+        "summaries": "smart summaries",
+        "study material": "study materials",
+        "material": "study materials",
+        "resource": "learning resources",
+        "resources": "learning resources",
+        "flashcard": "ai flashcards",
+        "flash cards": "ai flashcards",
+        "timetable": "weekly timetable",
+        "reminders": "reminders notifications",
+        "notifications": "reminders notifications",
+        "goals": "learning goals streaks",
+        "groups": "study groups",
+        "challenge": "peer challenges",
+        "challenges": "peer challenges",
+        "forum": "discussion forum",
+        "discussion": "discussion forum",
+        "feedback": "course feedback",
+        "certificate": "my certificates",
+        "certificates": "my certificates",
+        "progress": "progress overview",
+        "placement center": "career placement",
+        "practice": "interactive practice lab",
+        "practice lab": "interactive practice lab",
+        "library": "digital library notes",
+        "notes": "digital library notes",
+        "exam": "smart exam simulator",
+        "exam simulator": "smart exam simulator",
+        "interview": "ai interview preparation studio",
+        "escape room": "ai educational escape room",
+        "debate": "ai debate arena",
+        "concept map": "concept map studio",
+        "accessibility": "accessibility assistant",
+        "profile": "my profile",
+        "preferences": "settings",
+        "faculty": "faculty admin panel",
+        "faculty panel": "faculty admin panel",
+        "admin": "admin dashboard",
+        "admin panel": "admin dashboard"
+      };
+
+      const available = navigationItems.map(([id, , label]) => ({
+        id: String(id || ""),
+        label: String(label || "").replace(/\s*\(\d+\)\s*$/, "")
+      }));
+
+      let match = null;
+      let matchedTranscript = "";
+
+      for (const candidate of candidates) {
+        const phrase = aliases[candidate.normalized] || candidate.normalized;
+
+        // Prefer exact ID/label matches so similar section names never collide.
+        match = available.find((item) =>
+          phrase === normalizeVoiceCommand(item.id) ||
+          phrase === normalizeVoiceCommand(item.label)
+        );
+
+        // Accept a complete section name inside a longer natural sentence.
         if (!match) {
-          // Allow a natural sentence containing a complete section name, without matching tiny words.
           match = available.find((item) => {
             const idPhrase = normalizeVoiceCommand(item.id);
             const labelPhrase = normalizeVoiceCommand(item.label);
-            return (idPhrase.length >= 5 && candidate.includes(idPhrase)) || (labelPhrase.length >= 5 && candidate.includes(labelPhrase));
+            return (
+              (idPhrase.length >= 4 && phrase.includes(idPhrase)) ||
+              (labelPhrase.length >= 4 && phrase.includes(labelPhrase)) ||
+              (idPhrase.length >= 4 && idPhrase.includes(phrase)) ||
+              (labelPhrase.length >= 4 && labelPhrase.includes(phrase))
+            );
           });
         }
-        if (match) { matchedPhrase = candidate; break; }
+
+        if (match) {
+          matchedTranscript = candidate.original;
+          break;
+        }
       }
+
       if (match) {
-        setMessage(`Opening ${match.label} (${matchedPhrase}).`);
+        setMessage(`Opening ${match.label}. I heard: "${matchedTranscript}".`);
         setError("");
         onNavigate(match.id);
-      } else {
-        setError(`I heard "${alternatives[0] || ""}", but could not identify a dashboard section. Say “open” followed by a section name, such as “open analytics” or “open study groups”.`);
+        return;
       }
+
+      const heard = alternatives[0] || "an unclear command";
+      const examples = available.slice(0, 6).map((item) => item.label).join(", ");
+      setError(
+        `I heard "${heard}", but couldn't match it to an available section. Try saying the exact sidebar name, such as "open My Courses", "open Quiz Generator", or "open Faculty / Admin Panel".`
+      );
+      setMessage(examples ? `Available sections include: ${examples}.` : "No dashboard navigation sections were provided.");
     };
-    try { recognition.start(); } catch (recognitionError) {
+
+    try {
+      recognition.start();
+    } catch (recognitionError) {
       setListening(false);
-      setError("Voice recognition could not start. Please check microphone permission and try again.");
+      setError("Voice recognition could not start. Check microphone permission and try again.");
     }
   }
 
@@ -1902,6 +2214,161 @@ function ConceptMapStudio() {
 }
 
 
+// FEATURE 23 — INTERACTIVE PRACTICE LAB
+function InteractivePracticeLab() {
+  const [activeTab, setActiveTab] = useState("playground");
+  const [language, setLanguage] = useState("html");
+  const [htmlCode, setHtmlCode] = useState('<main class="card">\n  <h1>Hello, SmartLearn AI!</h1>\n  <p>Edit this page, then watch your changes in the preview.</p>\n  <button onclick="document.querySelector(\'p\').textContent = \'Great work! Your button works.\'">Try me</button>\n</main>');
+  const [cssCode, setCssCode] = useState('body { font-family: Arial, sans-serif; padding: 24px; background: #f1f5f9; }\n.card { max-width: 560px; margin: 30px auto; padding: 28px; background: white; border-radius: 16px; box-shadow: 0 8px 24px #0f172a18; }\nh1 { color: #153653; }\nbutton { border: 0; border-radius: 8px; padding: 10px 16px; background: #139b91; color: white; cursor: pointer; }');
+  const [jsCode, setJsCode] = useState("console.log('Welcome to the SmartLearn AI practice lab!');");
+  const [selectedChallenge, setSelectedChallenge] = useState(0);
+  const [selectedAnswer, setSelectedAnswer] = useState("");
+  const [answerMessage, setAnswerMessage] = useState("");
+  const [score, setScore] = useState(0);
+  const [attempts, setAttempts] = useState(0);
+  const [completed, setCompleted] = useState([]);
+  const [saveMessage, setSaveMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [previewKey, setPreviewKey] = useState(0);
+
+  const challenges = [
+    { id: "html-heading", track: "HTML", level: "Beginner", title: "Build a page heading", prompt: "Which HTML element represents the most important page heading?", options: ["<head>", "<h1>", "<p>", "<title>"], answer: 1, explanation: "Use <h1> for the main heading visible in the page content." },
+    { id: "css-color", track: "CSS", level: "Beginner", title: "Style text", prompt: "Which CSS property changes the text colour?", options: ["font-style", "background", "color", "text-decoration"], answer: 2, explanation: "The color property sets the foreground colour of text." },
+    { id: "js-variable", track: "JavaScript", level: "Beginner", title: "Declare a variable", prompt: "Which keyword declares a block-scoped variable that can be reassigned?", options: ["let", "const", "static", "echo"], answer: 0, explanation: "let declares a block-scoped variable that can be reassigned." },
+    { id: "python-list", track: "Python", level: "Beginner", title: "Work with lists", prompt: "Which expression adds an item to the end of a Python list named items?", options: ["items.addEnd(x)", "items.append(x)", "append.items(x)", "items.pushBack(x)"], answer: 1, explanation: "list.append(value) adds one item to the end of a Python list." },
+    { id: "math-percent", track: "Mathematics", level: "Beginner", title: "Calculate a percentage", prompt: "What is 20% of 150?", options: ["15", "20", "30", "35"], answer: 2, explanation: "20% = 0.2, and 0.2 × 150 = 30." },
+    { id: "sql-filter", track: "SQL", level: "Intermediate", title: "Filter database rows", prompt: "Which SQL clause filters rows using a condition?", options: ["ORDER BY", "WHERE", "GROUP BY", "CREATE"], answer: 1, explanation: "WHERE filters rows before the result is returned." },
+    { id: "algorithm-loop", track: "Algorithms", level: "Intermediate", title: "Repeat an operation", prompt: "Which control structure repeats a block while a condition is true?", options: ["Sequence", "Selection", "Iteration", "Declaration"], answer: 2, explanation: "Iteration repeats instructions using loops such as while and for." },
+    { id: "ai-training", track: "Artificial Intelligence", level: "Intermediate", title: "Understand machine learning", prompt: "What does a supervised learning model learn from?", options: ["Labelled examples", "Only random numbers", "No data", "Hardware instructions"], answer: 0, explanation: "Supervised learning uses labelled training examples with known target outputs." }
+  ];
+  const currentChallenge = challenges[selectedChallenge];
+  const previewDocument = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${cssCode}</style></head><body>${htmlCode}<script>${jsCode.replace(/<\/script/gi, "<\\/script")}</script></body></html>`;
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!user) return;
+      try {
+        const snapshot = await getDoc(doc(db, "users", user.uid, "practiceLab", "progress"));
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          setScore(Number(data.score) || 0);
+          setAttempts(Number(data.attempts) || 0);
+          setCompleted(Array.isArray(data.completed) ? data.completed : []);
+        }
+      } catch (error) {
+        console.warn("Practice lab progress could not be loaded:", error);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const saveProgress = async (next = {}) => {
+    const user = auth.currentUser;
+    if (!user) {
+      setSaveMessage("Sign in to save your practice progress to your account. Your current session progress is still available here.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await setDoc(doc(db, "users", user.uid, "practiceLab", "progress"), {
+        score: next.score ?? score,
+        attempts: next.attempts ?? attempts,
+        completed: next.completed ?? completed,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      setSaveMessage("Practice progress saved to your account.");
+    } catch (error) {
+      console.error("Practice lab save error:", error);
+      setSaveMessage("Could not save progress. Check your Firestore rules and try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const checkAnswer = () => {
+    if (selectedAnswer === "") {
+      setAnswerMessage("Choose an answer first.");
+      return;
+    }
+    const isCorrect = Number(selectedAnswer) === currentChallenge.answer;
+    const nextAttempts = attempts + 1;
+    const nextScore = score + (isCorrect && !completed.includes(currentChallenge.id) ? 10 : 0);
+    const nextCompleted = isCorrect && !completed.includes(currentChallenge.id) ? [...completed, currentChallenge.id] : completed;
+    setAttempts(nextAttempts);
+    setScore(nextScore);
+    setCompleted(nextCompleted);
+    setAnswerMessage(`${isCorrect ? "Correct! +10 points." : "Not quite."} ${currentChallenge.explanation}`);
+    if (isCorrect) saveProgress({ score: nextScore, attempts: nextAttempts, completed: nextCompleted });
+    else saveProgress({ attempts: nextAttempts });
+  };
+
+  const loadTemplate = (value) => {
+    setLanguage("html");
+    if (value === "profile") {
+      setHtmlCode('<section class="profile">\n  <div class="avatar">SL</div>\n  <h1>Your Name</h1>\n  <p>Learning something new every day.</p>\n  <a href="https://example.com">My portfolio</a>\n</section>');
+      setCssCode('body { font-family: Arial; background: #eef5f7; padding: 30px; }\n.profile { max-width: 420px; margin: auto; text-align: center; padding: 32px; background: white; border-radius: 18px; }\n.avatar { margin: auto; width: 64px; height: 64px; display: grid; place-items: center; border-radius: 50%; background: #d9f3ef; color: #087e75; font-weight: bold; }\na { color: #087e75; }');
+      setJsCode("console.log('Profile card loaded');");
+    } else if (value === "counter") {
+      setHtmlCode('<main class="counter">\n  <h1>Counter</h1>\n  <p id="count">0</p>\n  <button id="increase">Add one</button>\n</main>');
+      setCssCode('body { font-family: Arial; text-align: center; padding: 40px; }\n.counter { max-width: 360px; margin: auto; padding: 28px; border-radius: 16px; background: #eff6ff; }\n#count { font-size: 48px; font-weight: bold; color: #155e75; }\nbutton { padding: 10px 18px; border: 0; border-radius: 8px; background: #0f9f91; color: white; }');
+      setJsCode("let count = 0;\ndocument.getElementById('increase').addEventListener('click', () => {\n  count += 1;\n  document.getElementById('count').textContent = count;\n});");
+    } else {
+      setHtmlCode('<main class="card">\n  <h1>Hello, SmartLearn AI!</h1>\n  <p>Edit this page, then watch your changes in the preview.</p>\n  <button onclick="document.querySelector(\'p\').textContent = \'Great work! Your button works.\'">Try me</button>\n</main>');
+      setCssCode('body { font-family: Arial, sans-serif; padding: 24px; background: #f1f5f9; }\n.card { max-width: 560px; margin: 30px auto; padding: 28px; background: white; border-radius: 16px; }\nh1 { color: #153653; }\nbutton { border: 0; border-radius: 8px; padding: 10px 16px; background: #139b91; color: white; cursor: pointer; }');
+      setJsCode("console.log('Welcome to the SmartLearn AI practice lab!');");
+    }
+    setPreviewKey((value) => value + 1);
+  };
+
+  const downloadProject = () => {
+    const blob = new Blob([previewDocument], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "smartlearn-practice-project.html";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const panel = { background: "#fff", border: "1px solid #dce6ef", borderRadius: 14, padding: 20, marginTop: 16 };
+  const field = { boxSizing: "border-box", width: "100%", padding: 12, border: "1px solid #cbd5e1", borderRadius: 9, fontFamily: "inherit", fontSize: 14 };
+  const editor = { ...field, minHeight: 190, resize: "vertical", background: "#10233f", color: "#e7f5f5", fontFamily: "Consolas, monospace", lineHeight: 1.55 };
+  const action = { border: 0, borderRadius: 9, padding: "11px 16px", background: "#139b91", color: "white", fontWeight: 700, cursor: "pointer" };
+  const secondary = { border: "1px solid #cbd8e5", borderRadius: 9, padding: "10px 14px", background: "#fff", color: "#24425d", fontWeight: 600, cursor: "pointer" };
+
+  return (
+    <section className="dashboard-section" id="practice-lab">
+      <div className="dashboard-section-heading">
+        <div><span>FEATURE 23 · LEARN BY DOING</span><h2>🧪 Interactive Practice Lab</h2><p className="section-description">Build small projects, experiment with code, solve skill challenges and track your practice progress.</p></div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, marginTop: 18 }}>
+        {[{ label: "Points earned", value: score, icon: "⭐" }, { label: "Challenges completed", value: completed.length, icon: "🏁" }, { label: "Attempts", value: attempts, icon: "📝" }, { label: "Available challenges", value: challenges.length, icon: "🎯" }].map((item) => <div key={item.label} style={{ ...panel, marginTop: 0 }}><div style={{ fontSize: 22 }}>{item.icon}</div><strong style={{ display: "block", color: "#18334f", fontSize: 25, marginTop: 6 }}>{item.value}</strong><span style={{ color: "#64748b", fontSize: 13 }}>{item.label}</span></div>)}
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 20 }}>
+        {[ ["playground", "💻 Code Playground"], ["challenges", "🎯 Skill Challenges"], ["progress", "📈 My Progress"] ].map(([id, label]) => <button key={id} type="button" onClick={() => setActiveTab(id)} style={activeTab === id ? action : secondary}>{label}</button>)}
+      </div>
+
+      {activeTab === "playground" && <div style={panel}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}><div><h3 style={{ margin: 0, color: "#18334f" }}>Web Coding Playground</h3><p className="demo-note">Edit HTML, CSS and JavaScript. The isolated preview updates when you run it.</p></div><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><select aria-label="Load starter template" onChange={(event) => loadTemplate(event.target.value)} defaultValue="starter" style={{ ...field, width: "auto" }}><option value="starter">Starter page</option><option value="profile">Profile card template</option><option value="counter">Interactive counter template</option></select><button type="button" onClick={() => setPreviewKey((value) => value + 1)} style={action}>▶ Run preview</button><button type="button" onClick={downloadProject} style={secondary}>Download HTML</button></div></div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,320px),1fr))", gap: 14, marginTop: 14 }}>
+          <div style={{ display: "grid", gap: 12 }}><label style={{ color: "#18334f", fontWeight: 700 }}>HTML<textarea aria-label="HTML code" spellCheck="false" value={htmlCode} onChange={(event) => setHtmlCode(event.target.value)} style={editor} /></label><label style={{ color: "#18334f", fontWeight: 700 }}>CSS<textarea aria-label="CSS code" spellCheck="false" value={cssCode} onChange={(event) => setCssCode(event.target.value)} style={{ ...editor, minHeight: 150 }} /></label><label style={{ color: "#18334f", fontWeight: 700 }}>JavaScript<textarea aria-label="JavaScript code" spellCheck="false" value={jsCode} onChange={(event) => setJsCode(event.target.value)} style={{ ...editor, minHeight: 150 }} /></label></div>
+          <div><h4 style={{ color: "#18334f", marginTop: 0 }}>Live preview</h4><iframe key={previewKey} title="Interactive code preview" sandbox="allow-scripts" srcDoc={previewDocument} style={{ width: "100%", minHeight: 510, border: "1px solid #cbd8e5", borderRadius: 10, background: "white" }} /><p className="demo-note">Preview runs in a sandboxed frame. It does not have access to your dashboard or Firebase account.</p></div>
+        </div>
+      </div>}
+
+      {activeTab === "challenges" && <div style={panel}>
+        <div style={{ display: "flex", gap: 10, justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}><div><h3 style={{ margin: 0, color: "#18334f" }}>Skill Challenge</h3><p className="demo-note">Choose a topic and answer the question. Each new correct challenge earns 10 points.</p></div><select aria-label="Choose a practice challenge" value={selectedChallenge} onChange={(event) => { setSelectedChallenge(Number(event.target.value)); setSelectedAnswer(""); setAnswerMessage(""); }} style={{ ...field, width: "auto", minWidth: 220 }}>{challenges.map((challenge, index) => <option key={challenge.id} value={index}>{challenge.track} · {challenge.level}</option>)}</select></div>
+        <div style={{ marginTop: 18, padding: 18, borderRadius: 12, background: "#f3f8fb" }}><span style={{ color: "#0b8d83", fontSize: 12, fontWeight: 800 }}>{currentChallenge.track.toUpperCase()} · {currentChallenge.level.toUpperCase()}</span><h3 style={{ color: "#18334f", margin: "8px 0" }}>{currentChallenge.title}</h3><p style={{ color: "#334155", fontSize: 17 }}>{currentChallenge.prompt}</p><div style={{ display: "grid", gap: 9 }}>{currentChallenge.options.map((option, index) => <label key={option} style={{ display: "flex", gap: 10, alignItems: "center", padding: 12, border: "1px solid #d6e1eb", borderRadius: 9, background: selectedAnswer === String(index) ? "#e4f6f2" : "white", cursor: "pointer" }}><input type="radio" name="practice-lab-answer" value={index} checked={selectedAnswer === String(index)} onChange={(event) => { setSelectedAnswer(event.target.value); setAnswerMessage(""); }} />{option}</label>)}</div><div style={{ display: "flex", gap: 9, flexWrap: "wrap", marginTop: 14 }}><button type="button" style={action} onClick={checkAnswer}>Check answer</button><button type="button" style={secondary} onClick={() => { setSelectedChallenge((value) => (value + 1) % challenges.length); setSelectedAnswer(""); setAnswerMessage(""); }}>Next challenge →</button></div>{answerMessage && <p role="status" style={{ marginTop: 14, padding: 12, borderRadius: 9, background: answerMessage.startsWith("Correct") ? "#e8f7ef" : "#fff5e8", color: answerMessage.startsWith("Correct") ? "#176b45" : "#80520a" }}>{answerMessage}</p>}</div>
+      </div>}
+
+      {activeTab === "progress" && <div style={panel}><div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}><div><h3 style={{ margin: 0, color: "#18334f" }}>Your practice progress</h3><p className="demo-note">Completed challenges and points earned in this practice lab.</p></div><button type="button" style={action} disabled={saving} onClick={() => saveProgress()}>{saving ? "Saving..." : "Save progress to my account"}</button></div><div style={{ marginTop: 16, display: "grid", gap: 10 }}>{challenges.map((challenge) => { const done = completed.includes(challenge.id); return <div key={challenge.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", padding: 12, border: "1px solid #dce6ef", borderRadius: 9 }}><div><strong style={{ color: "#18334f" }}>{challenge.title}</strong><div className="demo-note">{challenge.track} · {challenge.level}</div></div><span style={{ color: done ? "#16804d" : "#64748b", fontWeight: 700 }}>{done ? "✓ Completed" : "Not completed"}</span></div>; })}</div>{saveMessage && <p role="status" className="demo-note" style={{ marginTop: 12 }}>{saveMessage}</p>}</div>}
+      {saveMessage && activeTab !== "progress" && <p role="status" className="demo-note">{saveMessage}</p>}
+      <p className="demo-note" style={{ marginTop: 12 }}>Progress is stored under your signed-in Firebase account in <code>users/{"{uid}"}/practiceLab/progress</code>. Code projects can be downloaded as standalone HTML files. Python, SQL and algorithm questions are knowledge challenges; the live code preview currently runs HTML, CSS and JavaScript.</p>
+    </section>
+  );
+}
+
+
 // FEATURE 24 — DIGITAL LIBRARY & NOTES MANAGER
 function DigitalLibraryNotesManager() {
   const [items, setItems] = useState([]);
@@ -2062,6 +2529,292 @@ function DigitalLibraryNotesManager() {
 }
 
 
+// FEATURE 25 — SMART EXAM SIMULATOR
+function SmartExamSimulator() {
+  const [subject, setSubject] = useState("Computer Science");
+  const [difficulty, setDifficulty] = useState("All");
+  const [questionCount, setQuestionCount] = useState(10);
+  const [duration, setDuration] = useState(15);
+  const [exam, setExam] = useState(null);
+  const [answers, setAnswers] = useState({});
+  const [remaining, setRemaining] = useState(0);
+  const [result, setResult] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  const bank = [
+    {subject:"Computer Science",difficulty:"Easy",type:"mcq",q:"Which data structure follows FIFO order?",options:["Stack","Queue","Tree","Graph"],answer:"Queue",explanation:"A queue removes the earliest inserted item first (First In, First Out)."},
+    {subject:"Computer Science",difficulty:"Easy",type:"mcq",q:"What does CPU stand for?",options:["Central Processing Unit","Computer Personal Unit","Core Program Utility","Central Program User"],answer:"Central Processing Unit",explanation:"The CPU executes instructions and coordinates processing tasks."},
+    {subject:"Computer Science",difficulty:"Medium",type:"mcq",q:"Which search algorithm requires sorted data?",options:["Linear search","Binary search","Depth-first search","Hash lookup"],answer:"Binary search",explanation:"Binary search repeatedly halves a sorted search range."},
+    {subject:"Computer Science",difficulty:"Medium",type:"short",q:"What is the time complexity of binary search?",answer:"O(log n)",keywords:["log"],explanation:"Binary search halves the remaining search space on each step, giving logarithmic time."},
+    {subject:"Computer Science",difficulty:"Hard",type:"mcq",q:"Which structure is commonly used to implement a priority queue efficiently?",options:["Heap","Queue only","Linked list only","Stack"],answer:"Heap",explanation:"A binary heap supports efficient insertion and removal of the highest- or lowest-priority item."},
+    {subject:"Mathematics",difficulty:"Easy",type:"mcq",q:"What is 12 × 8?",options:["86","96","108","104"],answer:"96",explanation:"12 multiplied by 8 equals 96."},
+    {subject:"Mathematics",difficulty:"Easy",type:"short",q:"What is the square root of 144?",answer:"12",keywords:["12"],explanation:"12 × 12 = 144."},
+    {subject:"Mathematics",difficulty:"Medium",type:"mcq",q:"What is the derivative of x²?",options:["x","2x","x³","2"],answer:"2x",explanation:"By the power rule, d(xⁿ)/dx = n·xⁿ⁻¹."},
+    {subject:"Mathematics",difficulty:"Medium",type:"mcq",q:"A triangle's angles add up to how many degrees in Euclidean geometry?",options:["90°","180°","270°","360°"],answer:"180°",explanation:"The interior angles of a Euclidean triangle total 180 degrees."},
+    {subject:"Mathematics",difficulty:"Hard",type:"short",q:"What is the value of 2⁵?",answer:"32",keywords:["32"],explanation:"2 × 2 × 2 × 2 × 2 = 32."},
+    {subject:"Science",difficulty:"Easy",type:"mcq",q:"Which planet is known as the Red Planet?",options:["Venus","Mars","Jupiter","Mercury"],answer:"Mars",explanation:"Iron-rich dust gives Mars its reddish appearance."},
+    {subject:"Science",difficulty:"Easy",type:"mcq",q:"What gas do plants absorb during photosynthesis?",options:["Oxygen","Nitrogen","Carbon dioxide","Hydrogen"],answer:"Carbon dioxide",explanation:"Plants use carbon dioxide and water to produce sugars using light energy."},
+    {subject:"Science",difficulty:"Medium",type:"short",q:"What is the chemical formula for water?",answer:"H2O",keywords:["h2o"],explanation:"A water molecule contains two hydrogen atoms and one oxygen atom."},
+    {subject:"Science",difficulty:"Medium",type:"mcq",q:"What is the SI unit of electric current?",options:["Volt","Ampere","Ohm","Watt"],answer:"Ampere",explanation:"Electric current is measured in amperes (A)."},
+    {subject:"Science",difficulty:"Hard",type:"mcq",q:"Which particle has a negative electric charge?",options:["Proton","Neutron","Electron","Photon"],answer:"Electron",explanation:"Electrons carry a negative elementary charge."},
+    {subject:"Artificial Intelligence",difficulty:"Easy",type:"mcq",q:"What does AI stand for?",options:["Automated Internet","Artificial Intelligence","Applied Interface","Advanced Input"],answer:"Artificial Intelligence",explanation:"AI refers to computer systems performing tasks associated with human intelligence."},
+    {subject:"Artificial Intelligence",difficulty:"Easy",type:"mcq",q:"Which is an example of supervised learning?",options:["Clustering unlabeled data","Training with labeled examples","Random guessing","Data compression"],answer:"Training with labeled examples",explanation:"Supervised learning uses input examples paired with known target labels."},
+    {subject:"Artificial Intelligence",difficulty:"Medium",type:"short",q:"What does NLP stand for in AI?",answer:"Natural Language Processing",keywords:["natural","language","processing"],explanation:"NLP helps computers process, interpret, and generate human language."},
+    {subject:"Artificial Intelligence",difficulty:"Medium",type:"mcq",q:"Which neural network architecture is widely used for image recognition?",options:["CNN","RNN only","Decision table","Hash map"],answer:"CNN",explanation:"Convolutional Neural Networks learn spatial patterns in image data."},
+    {subject:"Artificial Intelligence",difficulty:"Hard",type:"mcq",q:"What is a common risk when training models on biased data?",options:["Guaranteed fairness","Biased predictions","No computation","Perfect accuracy"],answer:"Biased predictions",explanation:"A model can reproduce or amplify patterns and unfairness present in its training data."},
+    {subject:"Programming",difficulty:"Easy",type:"mcq",q:"Which symbol is commonly used for a single-line comment in JavaScript?",options:["<!--","//","##","**"],answer:"//",explanation:"JavaScript single-line comments begin with two forward slashes."},
+    {subject:"Programming",difficulty:"Easy",type:"short",q:"Which JavaScript keyword declares a block-scoped variable that can be reassigned?",answer:"let",keywords:["let"],explanation:"The let keyword declares a block-scoped variable that may be reassigned."},
+    {subject:"Programming",difficulty:"Medium",type:"mcq",q:"Which HTML element creates a hyperlink?",options:["<p>","<a>","<img>","<div>"],answer:"<a>",explanation:"The anchor element (<a>) creates hyperlinks, usually with an href attribute."},
+    {subject:"Programming",difficulty:"Medium",type:"mcq",q:"What does CSS primarily control?",options:["Database storage","Webpage presentation","Server routing","CPU scheduling"],answer:"Webpage presentation",explanation:"CSS defines layout, colors, typography, and other presentation rules."},
+    {subject:"Programming",difficulty:"Hard",type:"short",q:"What is the output of Boolean(0) in JavaScript?",answer:"false",keywords:["false"],explanation:"Zero is a falsy value in JavaScript, so Boolean(0) evaluates to false."}
+  ];
+
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      const user = auth.currentUser;
+      if (!user) { setHistoryLoading(false); return; }
+      try {
+        const snap = await getDocs(collection(db, "users", user.uid, "examAttempts"));
+        if (alive) setHistory(snap.docs.map(d => ({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0)).slice(0,20));
+      } catch (e) { console.error("Exam history load failed", e); if (alive) setNotice("Exam history could not load. Check your Firestore rules."); }
+      finally { if (alive) setHistoryLoading(false); }
+    };
+    load();
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!exam || result) return;
+    if (remaining <= 0) { if (remaining === 0) finishExam(true); return; }
+    const timer = setTimeout(() => setRemaining(v => Math.max(0, v - 1)), 1000);
+    return () => clearTimeout(timer);
+  }, [exam, result, remaining]);
+
+  const startExam = () => {
+    let pool = bank.filter(q => q.subject === subject && (difficulty === "All" || q.difficulty === difficulty));
+    if (!pool.length) return setNotice("No questions found for this selection.");
+    pool = [...pool].sort(() => Math.random() - 0.5).slice(0, Math.min(questionCount, pool.length));
+    setExam(pool); setAnswers({}); setResult(null); setRemaining(duration * 60); setNotice("");
+  };
+
+  async function finishExam(autoSubmitted = false) {
+    if (!exam || result) return;
+    const checked = exam.map((q,i) => {
+      const raw = String(answers[i] ?? "").trim();
+      const correct = q.type === "mcq" ? raw === q.answer : (q.keywords || []).every(k => raw.toLowerCase().includes(k.toLowerCase()));
+      return {...q,userAnswer:raw,correct};
+    });
+    const score = checked.filter(q => q.correct).length;
+    const summary = {score,total:checked.length,percentage:Math.round(score/checked.length*100),questions:checked,autoSubmitted};
+    setResult(summary); setSaving(true);
+    try {
+      const user = auth.currentUser;
+      if (user) {
+        const record = {subject,difficulty,score,total:checked.length,percentage:summary.percentage,autoSubmitted,createdAt:serverTimestamp(),answers:checked.map(q=>({question:q.q,userAnswer:q.userAnswer,correct:q.correct,answer:q.answer}))};
+        const ref = await addDoc(collection(db,"users",user.uid,"examAttempts"),record);
+        setHistory(prev=>[{id:ref.id,...record,createdAt:{seconds:Math.floor(Date.now()/1000)}},...prev].slice(0,20));
+      }
+    } catch (e) { console.error("Exam result save failed",e); setNotice("Your result is shown, but saving exam history failed. Check Firestore rules."); }
+    finally { setSaving(false); }
+  }
+  const fmt = n => `${String(Math.floor(n/60)).padStart(2,"0")}:${String(n%60).padStart(2,"0")}`;
+  const panel = {background:"#fff",border:"1px solid #e1e8f0",borderRadius:14,padding:18,boxShadow:"0 5px 18px rgba(20,45,70,.04)"};
+  const field = {padding:"10px 12px",border:"1px solid #ccd8e4",borderRadius:9,background:"#fff",color:"#20364d",width:"100%"};
+  const button = {border:0,borderRadius:9,padding:"10px 15px",background:"#087f8c",color:"white",fontWeight:700,cursor:"pointer"};
+
+  return <section className="dashboard-section" id="exam-simulator">
+    <div className="dashboard-section-heading"><div><span>FEATURE 25 · TEST YOUR KNOWLEDGE</span><h2>📝 Smart Exam Simulator</h2><p className="section-description">Take timed subject-wise exams, review explanations, and track your progress over time.</p></div></div>
+    {!exam && <div style={panel}>
+      <h3 style={{marginTop:0,color:"#18334f"}}>Set up your exam</h3>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:13}}>
+        <label style={{fontWeight:650,color:"#40546a"}}>Subject<select value={subject} onChange={e=>setSubject(e.target.value)} style={{...field,display:"block",marginTop:6}}>{["Computer Science","Mathematics","Science","Artificial Intelligence","Programming"].map(x=><option key={x}>{x}</option>)}</select></label>
+        <label style={{fontWeight:650,color:"#40546a"}}>Difficulty<select value={difficulty} onChange={e=>setDifficulty(e.target.value)} style={{...field,display:"block",marginTop:6}}>{["All","Easy","Medium","Hard"].map(x=><option key={x}>{x}</option>)}</select></label>
+        <label style={{fontWeight:650,color:"#40546a"}}>Questions<select value={questionCount} onChange={e=>setQuestionCount(Number(e.target.value))} style={{...field,display:"block",marginTop:6}}>{[5,10,15,20].map(x=><option key={x} value={x}>{x} questions</option>)}</select></label>
+        <label style={{fontWeight:650,color:"#40546a"}}>Time limit<select value={duration} onChange={e=>setDuration(Number(e.target.value))} style={{...field,display:"block",marginTop:6}}>{[5,10,15,20,30,45,60].map(x=><option key={x} value={x}>{x} minutes</option>)}</select></label>
+      </div>
+      <p className="demo-note" style={{marginTop:12}}>Questions include multiple-choice and short-answer formats. Short answers are checked against key terms, so equivalent wording may need manual review.</p>
+      <button type="button" style={button} onClick={startExam}>Start exam →</button>
+    </div>}
+    {exam && !result && <div style={panel}>
+      <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center",flexWrap:"wrap",borderBottom:"1px solid #e7edf3",paddingBottom:12,marginBottom:16}}><div><strong style={{color:"#18334f"}}>{subject} · {exam.length} questions</strong><div className="demo-note">Answer every question, then submit.</div></div><div aria-live="polite" style={{fontSize:22,fontWeight:800,color:remaining<60?"#c0392b":"#087f8c"}}>⏱ {fmt(remaining)}</div></div>
+      <div style={{display:"grid",gap:14}}>{exam.map((q,i)=><article key={`${q.q}-${i}`} style={{padding:14,border:"1px solid #e2eaf1",borderRadius:11}}><div style={{display:"flex",gap:8,flexWrap:"wrap",fontSize:12,color:"#648096",fontWeight:700,marginBottom:8}}><span>QUESTION {i+1} / {exam.length}</span><span>· {q.difficulty}</span><span>· {q.type === "mcq"?"MULTIPLE CHOICE":"SHORT ANSWER"}</span></div><h4 style={{color:"#20364d",margin:"0 0 12px"}}>{q.q}</h4>{q.type === "mcq" ? <div style={{display:"grid",gap:8}}>{q.options.map(opt=><label key={opt} style={{display:"flex",gap:9,alignItems:"center",padding:10,border:"1px solid #e0e8ef",borderRadius:8,cursor:"pointer",background:answers[i]===opt?"#edf8f8":"#fff"}}><input type="radio" name={`exam-${i}`} checked={answers[i]===opt} onChange={()=>setAnswers(a=>({...a,[i]:opt}))}/>{opt}</label>)}</div> : <input style={field} value={answers[i]||""} onChange={e=>setAnswers(a=>({...a,[i]:e.target.value}))} placeholder="Type your answer..."/>}</article>)}</div>
+      <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"center",flexWrap:"wrap",marginTop:16}}><span className="demo-note">{Object.keys(answers).filter(k=>String(answers[k]).trim()).length} of {exam.length} answered</span><button type="button" style={button} onClick={()=>finishExam(false)}>Submit exam</button></div>
+    </div>}
+    {result && <div style={panel}>
+      <div style={{textAlign:"center",padding:"12px 0 20px"}}><div style={{fontSize:42}}>{result.percentage>=80?"🏆":result.percentage>=50?"👏":"📘"}</div><h3 style={{color:"#18334f",margin:"5px 0"}}>Exam completed</h3><div style={{fontSize:38,fontWeight:850,color:"#087f8c"}}>{result.percentage}%</div><p style={{color:"#5e7184"}}>You scored {result.score} out of {result.total}{result.autoSubmitted?" · Automatically submitted when time ran out":""}</p>{saving&&<p className="demo-note">Saving your result...</p>}</div>
+      <h3 style={{color:"#18334f"}}>Answer review</h3><div style={{display:"grid",gap:10}}>{result.questions.map((q,i)=><article key={i} style={{padding:12,border:"1px solid #e2eaf1",borderRadius:9}}><strong style={{color:q.correct?"#16835c":"#b44b43"}}>{q.correct?"✓ Correct":"✕ Incorrect"} · {q.q}</strong><p className="demo-note" style={{margin:"7px 0"}}>Your answer: {q.userAnswer||"Not answered"} · Correct answer: {q.answer}</p><p style={{color:"#52677b",margin:0,fontSize:13}}>{q.explanation}</p></article>)}</div>
+      <button type="button" style={{...button,marginTop:16}} onClick={()=>{setExam(null);setResult(null);setAnswers({});setRemaining(0);}}>Create another exam</button>
+    </div>}
+    {notice&&<p role="status" className="demo-note" style={{marginTop:12}}>{notice}</p>}
+    <div style={{...panel,marginTop:18}}><h3 style={{color:"#18334f",marginTop:0}}>📊 Recent exam history</h3>{historyLoading?<p className="demo-note">Loading history...</p>:history.length===0?<p className="demo-note">Your completed exams will appear here. Sign in to save your attempts.</p>:<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}><thead><tr style={{textAlign:"left",color:"#60758a"}}>{["Subject","Score","Result","Date"].map(x=><th key={x} style={{padding:"9px 8px",borderBottom:"1px solid #e4ebf1"}}>{x}</th>)}</tr></thead><tbody>{history.map(h=><tr key={h.id}><td style={{padding:"10px 8px",borderBottom:"1px solid #edf1f5"}}>{h.subject||"Exam"}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #edf1f5"}}>{h.score}/{h.total}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #edf1f5",fontWeight:700,color:Number(h.percentage)>=50?"#16835c":"#b44b43"}}>{h.percentage}%</td><td style={{padding:"10px 8px",borderBottom:"1px solid #edf1f5"}}>{h.createdAt?.seconds?new Date(h.createdAt.seconds*1000).toLocaleDateString():"Just now"}</td></tr>)}</tbody></table></div>}</div>
+    <p className="demo-note" style={{marginTop:10}}>Exam attempts are saved in Firestore at <code>users/&#123;uid&#125;/examAttempts</code>. This starter question bank is built in; no AI API or backend server is required.</p>
+  </section>;
+}
+
+
+// FEATURE 26 — AI INTERVIEW PREPARATION STUDIO
+function AIInterviewPreparationStudio() {
+  const [category, setCategory] = useState("Technical");
+  const [level, setLevel] = useState("Beginner");
+  const [activeQuestion, setActiveQuestion] = useState(0);
+  const [answer, setAnswer] = useState("");
+  const [answers, setAnswers] = useState([]);
+  const [rating, setRating] = useState({ clarity: 3, relevance: 3, confidence: 3, examples: 3 });
+  const [history, setHistory] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [debateUser, setDebateUser] = useState(auth.currentUser);
+  const [message, setMessage] = useState("");
+  const [seconds, setSeconds] = useState(120);
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [star, setStar] = useState({ situation: "", task: "", action: "", result: "" });
+
+  const questionBank = {
+    Technical: {
+      Beginner: [
+        "Explain the difference between a list and a tuple in Python.",
+        "What is object-oriented programming? Explain its main principles.",
+        "What is the difference between a primary key and a foreign key?"
+      ],
+      Intermediate: [
+        "How would you find and improve a slow SQL query?",
+        "Explain how a REST API works and how you would handle errors.",
+        "Describe the time and space complexity of binary search."
+      ],
+      Advanced: [
+        "How would you design a scalable service that handles millions of requests?",
+        "Explain concurrency challenges and how you would prevent race conditions.",
+        "How would you investigate a production memory leak?"
+      ]
+    },
+    HR: {
+      Beginner: [
+        "Tell me about yourself and your education.",
+        "Why are you interested in this role?",
+        "What are your greatest strengths and one area you are improving?"
+      ],
+      Intermediate: [
+        "Describe a time you solved a difficult problem in a team.",
+        "Tell me about a mistake you made and what you learned from it.",
+        "How do you prioritise tasks when several deadlines overlap?"
+      ],
+      Advanced: [
+        "Describe a time you influenced a decision without formal authority.",
+        "How would you handle a disagreement with your manager?",
+        "Tell me about a project that failed and how you took responsibility."
+      ]
+    }
+  };
+  const questions = questionBank[category][level];
+  const currentUser = auth.currentUser;
+  const score = Math.round(Object.values(rating).reduce((sum, value) => sum + Number(value), 0) / 4 * 20);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    let cancelled = false;
+    getDocs(query(collection(db, "users", currentUser.uid, "interviewSessions")))
+      .then((snapshot) => {
+        if (!cancelled) setHistory(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })).sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0)));
+      })
+      .catch((error) => console.error("Interview history loading error:", error));
+    return () => { cancelled = true; };
+  }, [currentUser?.uid]);
+
+  useEffect(() => {
+    if (!timerRunning) return undefined;
+    const timer = window.setInterval(() => setSeconds((value) => {
+      if (value <= 1) { window.clearInterval(timer); setTimerRunning(false); return 0; }
+      return value - 1;
+    }), 1000);
+    return () => window.clearInterval(timer);
+  }, [timerRunning]);
+
+  const saveAnswer = () => {
+    const updated = [...answers];
+    updated[activeQuestion] = answer.trim();
+    setAnswers(updated);
+    setMessage("Answer saved for this practice session.");
+  };
+  const changeQuestion = (next) => {
+    const updated = [...answers];
+    updated[activeQuestion] = answer.trim();
+    setAnswers(updated);
+    setActiveQuestion(next);
+    setAnswer(updated[next] || "");
+    setMessage("");
+    setSeconds(120);
+    setTimerRunning(false);
+  };
+  const startVoiceInput = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) { setMessage("Speech recognition is not supported in this browser. You can type your answer instead."); return; }
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-IN";
+    recognition.interimResults = false;
+    recognition.onresult = (event) => setAnswer((previous) => `${previous}${previous ? " " : ""}${event.results[0][0].transcript}`);
+    recognition.onerror = () => setMessage("Voice input was unavailable. Please type your answer.");
+    recognition.start();
+  };
+  const saveSession = async () => {
+    if (!currentUser) { setMessage("Please sign in again to save your interview practice."); return; }
+    const finalAnswers = [...answers];
+    finalAnswers[activeQuestion] = answer.trim();
+    setSaving(true);
+    setMessage("");
+    try {
+      const payload = { userId: currentUser.uid, category, level, questions, answers: finalAnswers, selfAssessment: rating, score, star, createdAt: serverTimestamp() };
+      const saved = await addDoc(collection(db, "users", currentUser.uid, "interviewSessions"), payload);
+      setHistory((previous) => [{ id: saved.id, ...payload, createdAt: { toMillis: () => Date.now() } }, ...previous]);
+      setAnswers(finalAnswers);
+      setMessage("Interview practice saved to your account.");
+    } catch (error) {
+      console.error("Interview session save error:", error);
+      setMessage("Could not save this session. Check your Firestore rules and try again.");
+    } finally { setSaving(false); }
+  };
+  const resetPractice = () => { setActiveQuestion(0); setAnswer(""); setAnswers([]); setRating({ clarity: 3, relevance: 3, confidence: 3, examples: 3 }); setSeconds(120); setTimerRunning(false); setMessage(""); };
+  const formatTime = (value) => `${Math.floor(value / 60).toString().padStart(2, "0")}:${(value % 60).toString().padStart(2, "0")}`;
+  const panel = { background: "#fff", border: "1px solid #dbe5ef", borderRadius: 15, padding: 18, boxShadow: "0 5px 18px rgba(20,50,80,.04)" };
+  const field = { width: "100%", padding: "11px 12px", border: "1px solid #cbd8e5", borderRadius: 9, font: "inherit", boxSizing: "border-box" };
+  const primary = { border: 0, borderRadius: 9, padding: "11px 16px", background: "#139b91", color: "white", fontWeight: 700, cursor: "pointer" };
+  const secondary = { border: "1px solid #cbd8e5", borderRadius: 9, padding: "10px 14px", background: "#fff", color: "#29445f", fontWeight: 650, cursor: "pointer" };
+
+  return <section className="dashboard-section" id="interview-prep-studio">
+    <div className="dashboard-section-heading"><div><span>FEATURE 26 · CAREER READINESS</span><h2>🎤 AI Interview Preparation Studio</h2><p className="section-description">Practise technical and HR interviews, structure strong answers and track your preparation.</p></div></div>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: 12, margin: "18px 0" }}>
+      {[{ label: "Practice type", value: category }, { label: "Difficulty", value: level }, { label: "Questions", value: questions.length }, { label: "Self-rating", value: `${score}/100` }].map((item) => <div key={item.label} style={panel}><span style={{ color: "#71839a", fontSize: 13 }}>{item.label}</span><strong style={{ display: "block", color: "#18334f", fontSize: 22, marginTop: 5 }}>{item.value}</strong></div>)}
+    </div>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,320px),1fr))", gap: 16 }}>
+      <div style={panel}>
+        <h3 style={{ marginTop: 0, color: "#18334f" }}>🎯 Set up your mock interview</h3>
+        <label style={{ display: "block", fontWeight: 700, marginBottom: 6 }}>Interview category</label>
+        <select value={category} onChange={(event) => { setCategory(event.target.value); resetPractice(); }} style={{ ...field, marginBottom: 12 }}><option>Technical</option><option>HR</option></select>
+        <label style={{ display: "block", fontWeight: 700, marginBottom: 6 }}>Difficulty</label>
+        <select value={level} onChange={(event) => { setLevel(event.target.value); resetPractice(); }} style={{ ...field, marginBottom: 14 }}><option>Beginner</option><option>Intermediate</option><option>Advanced</option></select>
+        <div style={{ background: "#f2f8fb", borderRadius: 12, padding: 14 }}><span style={{ color: "#61758c", fontSize: 13 }}>QUESTION {activeQuestion + 1} OF {questions.length}</span><h3 style={{ color: "#18334f", lineHeight: 1.5 }}>{questions[activeQuestion]}</h3><div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}><strong style={{ fontSize: 22, color: seconds === 0 ? "#dc2626" : "#139b91", fontVariantNumeric: "tabular-nums" }}>{formatTime(seconds)}</strong><button type="button" style={secondary} onClick={() => setTimerRunning((value) => !value)}>{timerRunning ? "Pause timer" : "Start 2-minute timer"}</button><button type="button" style={secondary} onClick={() => { setSeconds(120); setTimerRunning(false); }}>Reset</button></div></div>
+        <label style={{ display: "block", fontWeight: 700, margin: "14px 0 6px" }}>Your answer</label>
+        <textarea rows={7} maxLength={5000} value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder="Structure your response clearly. Include examples where possible..." style={{ ...field, resize: "vertical", lineHeight: 1.6 }} />
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}><button type="button" style={secondary} onClick={startVoiceInput}>🎙️ Speak answer</button><button type="button" style={secondary} onClick={saveAnswer}>Save answer</button></div>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 14 }}><button type="button" style={secondary} disabled={activeQuestion === 0} onClick={() => changeQuestion(activeQuestion - 1)}>Previous</button><button type="button" style={primary} disabled={activeQuestion === questions.length - 1} onClick={() => changeQuestion(activeQuestion + 1)}>Next question</button></div>
+      </div>
+      <div style={panel}>
+        <h3 style={{ marginTop: 0, color: "#18334f" }}>⭐ Evaluate your answer</h3><p className="demo-note">Rate yourself honestly. This is a reflection score, not an automated AI assessment.</p>
+        {[{ key: "clarity", label: "Clarity and structure" }, { key: "relevance", label: "Relevance to the question" }, { key: "confidence", label: "Confidence and delivery" }, { key: "examples", label: "Examples and evidence" }].map((item) => <label key={item.key} style={{ display: "block", margin: "16px 0", color: "#334155", fontWeight: 650 }}>{item.label}<div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 7 }}><input type="range" min="1" max="5" value={rating[item.key]} onChange={(event) => setRating((current) => ({ ...current, [item.key]: Number(event.target.value) }))} style={{ flex: 1 }} /><strong>{rating[item.key]}/5</strong></div></label>)}
+        <div style={{ background: "#effaf8", borderRadius: 12, padding: 14, marginTop: 14 }}><span style={{ color: "#53736f", fontSize: 13 }}>YOUR REFLECTION SCORE</span><strong style={{ display: "block", color: "#087f75", fontSize: 32 }}>{score}/100</strong><p style={{ marginBottom: 0, color: "#52706d", fontSize: 13 }}>Improve your lowest-rated area in your next practice attempt.</p></div>
+        <h3 style={{ color: "#18334f", marginTop: 22 }}>🧩 STAR answer builder</h3><p className="demo-note">Use this structure for behavioural HR questions.</p>
+        {[{ key: "situation", label: "Situation", hint: "What was the context?" }, { key: "task", label: "Task", hint: "What were you responsible for?" }, { key: "action", label: "Action", hint: "What steps did you take?" }, { key: "result", label: "Result", hint: "What was the outcome?" }].map((item) => <label key={item.key} style={{ display: "block", fontWeight: 700, marginTop: 10 }}>{item.label}<textarea rows={2} value={star[item.key]} onChange={(event) => setStar((current) => ({ ...current, [item.key]: event.target.value }))} placeholder={item.hint} style={{ ...field, marginTop: 5, resize: "vertical" }} /></label>)}
+      </div>
+    </div>
+    <div style={{ ...panel, marginTop: 16 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}><div><h3 style={{ color: "#18334f", margin: 0 }}>Save your interview attempt</h3><p className="demo-note">Your questions, answers and self-evaluation are saved privately under your signed-in account.</p></div><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button type="button" style={secondary} onClick={resetPractice}>Start over</button><button type="button" style={primary} disabled={saving} onClick={saveSession}>{saving ? "Saving..." : "Save interview session"}</button></div></div>{message && <p role="status" style={{ color: message.includes("Could not") || message.includes("Please sign") ? "#b45309" : "#087f75", fontWeight: 650 }}>{message}</p>}</div>
+    <div style={{ ...panel, marginTop: 16 }}><h3 style={{ color: "#18334f", marginTop: 0 }}>📈 Your interview history</h3>{history.length === 0 ? <p className="demo-note">No saved practice sessions yet. Complete a mock interview and save it to see your progress here.</p> : <div style={{ display: "grid", gap: 10 }}>{history.map((item) => <div key={item.id} style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", padding: 12, background: "#f7fafc", borderRadius: 10 }}><div><strong style={{ color: "#18334f" }}>{item.category} · {item.level}</strong><div className="demo-note">{item.questions?.length || 0} questions · {item.createdAt?.toDate?.().toLocaleString?.() || "Saved practice"}</div></div><strong style={{ color: "#139b91" }}>{item.score ?? 0}/100</strong></div>)}</div>}</div>
+  </section>;
+}
+
+
+
 // FEATURE 27 — AI EDUCATIONAL ESCAPE ROOM
 function AIEducationalEscapeRoom() {
   const rooms = [
@@ -2200,6 +2953,7 @@ function AIEducationalEscapeRoom() {
 // The opponent and scoring rubric are curated/rule-based; no external AI API is called.
 function AIDebateArena() {
   const topics = [
+    { id: "ai-education", topic: "AI tools should be used in classrooms", pro: ["AI tutors can give learners immediate, personalised practice and explanations.", "Teachers can use AI to reduce repetitive work and spend more time supporting students.", "With clear rules and source checking, AI literacy prepares students for modern workplaces."], con: ["Over-reliance on AI can weaken independent thinking and foundational problem-solving.", "Unequal access to devices and connectivity may widen existing learning gaps.", "AI can produce inaccurate answers and expose student data if safeguards are weak."] },
     { id: "remote-work", topic: "Remote work is better than office-based work", pro: ["Remote work saves commuting time and can give people more flexibility.", "Employers can recruit talent beyond one geographic location.", "Fewer office costs can be redirected toward tools, training and employee support."], con: ["In-person collaboration can make mentoring and spontaneous problem-solving easier.", "Remote workers may experience isolation and weaker team connection.", "Some roles need secure equipment, physical presence or direct customer interaction."] },
     { id: "social-media", topic: "Social media does more harm than good", pro: ["Recommendation systems can amplify misinformation and extreme content.", "Heavy use can affect attention, sleep and self-esteem.", "Personal data collection creates privacy and safety concerns."], con: ["Social platforms help people maintain relationships across distance.", "They provide access to educational resources, communities and emergency updates.", "Creators and small businesses can reach audiences without traditional gatekeepers."] },
     { id: "renewable-energy", topic: "Governments should prioritise renewable energy", pro: ["Renewables reduce dependence on finite fuels and lower operating emissions.", "Investment can create jobs in manufacturing, installation and maintenance.", "Diversified energy sources can improve long-term energy security."], con: ["Grid storage and transmission upgrades require substantial investment.", "Intermittent generation needs reliable backup and careful planning.", "Rapid transitions can burden communities and workers dependent on fossil-fuel industries."] },
@@ -2318,8 +3072,32 @@ function Dashboard({ onBack }) {
   // COURSE STATES
   const [courses, setCourses] = useState([]);
   const [selectedCourse, setSelectedCourse] = useState(null);
+  // Student Courses panel filter: controls which published faculty notes are shown.
+  const [courseNotesLevelFilter, setCourseNotesLevelFilter] = useState("all");
   const [selectedLesson, setSelectedLesson] = useState(null);
   const [selectedTopic, setSelectedTopic] = useState(null);
+
+  // Bring each newly opened learning panel into view so students can see it immediately.
+  useEffect(() => {
+    if (!selectedCourse) return;
+    requestAnimationFrame(() => {
+      document.getElementById("course-details-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [selectedCourse]);
+
+  useEffect(() => {
+    if (!selectedLesson) return;
+    requestAnimationFrame(() => {
+      document.getElementById("selected-lesson-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [selectedLesson]);
+
+  useEffect(() => {
+    if (!selectedTopic) return;
+    requestAnimationFrame(() => {
+      document.getElementById("topic-learning-content")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [selectedTopic]);
   const [completedLessons, setCompletedLessons] = useState({});
   const [certificates, setCertificates] = useState([]);
   const [certificateMessage, setCertificateMessage] = useState("");
@@ -2709,6 +3487,81 @@ function Dashboard({ onBack }) {
     if (selectedStudyGroup) loadStudyGroupMessages(selectedStudyGroup);
   }, [selectedStudyGroup?.id]);
 
+  // FEATURE 19 — PEER LEARNING CHALLENGES
+  const [selectedPeerChallengeId, setSelectedPeerChallengeId] = useState(peerLearningChallenges[0].id);
+  const [peerChallengeAnswers, setPeerChallengeAnswers] = useState({});
+  const [peerChallengeSubmissions, setPeerChallengeSubmissions] = useState([]);
+  const [peerChallengeLoading, setPeerChallengeLoading] = useState(true);
+  const [peerChallengeSaving, setPeerChallengeSaving] = useState(false);
+  const [peerChallengeError, setPeerChallengeError] = useState("");
+  const [peerChallengeMessage, setPeerChallengeMessage] = useState("");
+  const [peerChallengeResult, setPeerChallengeResult] = useState(null);
+  const selectedPeerChallenge = peerLearningChallenges.find((item) => item.id === selectedPeerChallengeId) || peerLearningChallenges[0];
+
+  async function loadPeerChallengeSubmissions() {
+    try {
+      setPeerChallengeLoading(true);
+      const snapshot = await getDocs(collection(db, "challengeSubmissions"));
+      const items = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+      items.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+      setPeerChallengeSubmissions(items);
+      setPeerChallengeError("");
+    } catch (err) {
+      console.error("Peer challenge loading error:", err);
+      setPeerChallengeError("Could not load challenge scores. Check the Challenge Submissions Firestore rules.");
+    } finally { setPeerChallengeLoading(false); }
+  }
+
+  async function submitPeerChallenge(event) {
+    event.preventDefault();
+    const user = auth.currentUser;
+    if (!user) { setPeerChallengeError("Please sign in to submit a challenge."); return; }
+    const questions = selectedPeerChallenge.questions;
+    if (questions.some((question) => peerChallengeAnswers[question.id] === undefined)) {
+      setPeerChallengeError("Please answer every question before submitting."); return;
+    }
+    const correctCount = questions.filter((question) => Number(peerChallengeAnswers[question.id]) === question.answer).length;
+    const score = Math.round((correctCount / questions.length) * selectedPeerChallenge.points);
+    try {
+      setPeerChallengeSaving(true); setPeerChallengeError(""); setPeerChallengeMessage("");
+      const payload = {
+        studentId: user.uid,
+        studentName: profile.name || user.displayName || user.email || "Student",
+        challengeId: selectedPeerChallenge.id,
+        challengeTitle: selectedPeerChallenge.title,
+        course: selectedPeerChallenge.course,
+        score,
+        totalPoints: selectedPeerChallenge.points,
+        correctCount,
+        questionCount: questions.length,
+        createdAt: serverTimestamp()
+      };
+      const saved = await addDoc(collection(db, "challengeSubmissions"), payload);
+      setPeerChallengeSubmissions((items) => [{ ...payload, id: saved.id, createdAt: new Date() }, ...items]);
+      setPeerChallengeResult({ score, totalPoints: selectedPeerChallenge.points, correctCount, questionCount: questions.length });
+      setPeerChallengeMessage("Your score has been saved. Great work!");
+    } catch (err) {
+      console.error("Peer challenge submission error:", err);
+      setPeerChallengeError("Could not save your score. Check the Challenge Submissions Firestore rules.");
+    } finally { setPeerChallengeSaving(false); }
+  }
+
+  function choosePeerChallenge(challengeId) {
+    setSelectedPeerChallengeId(challengeId);
+    setPeerChallengeAnswers({});
+    setPeerChallengeResult(null);
+    setPeerChallengeMessage("");
+    setPeerChallengeError("");
+  }
+
+  const peerLeaderboard = Object.values(peerChallengeSubmissions.reduce((best, item) => {
+    const key = `${item.challengeId || "unknown"}_${item.studentId || item.studentName || item.id}`;
+    if (!best[key] || Number(item.score || 0) > Number(best[key].score || 0)) best[key] = item;
+    return best;
+  }, {})).sort((a, b) => Number(b.score || 0) - Number(a.score || 0)).slice(0, 10);
+
+  useEffect(() => { loadPeerChallengeSubmissions(); }, []);
+
   // FLASHCARD STATES
   const [flashcards, setFlashcards] = useState([]);
   const [flashcardsLoading, setFlashcardsLoading] = useState(true);
@@ -2742,6 +3595,8 @@ function Dashboard({ onBack }) {
   const [learningResourceTitle, setLearningResourceTitle] = useState("");
   const [learningResourceCourse, setLearningResourceCourse] = useState("Python Programming");
   const [learningResourceSubject, setLearningResourceSubject] = useState("");
+  const [learningResourceLevel, setLearningResourceLevel] = useState("Beginner");
+  const [learningResourceLevelFilter, setLearningResourceLevelFilter] = useState("all");
   const [learningResourceDescription, setLearningResourceDescription] = useState("");
   const [learningResourceType, setLearningResourceType] = useState("file");
   const [learningResourceUrl, setLearningResourceUrl] = useState("");
@@ -2837,10 +3692,6 @@ function Dashboard({ onBack }) {
   const [adminUsersMessage, setAdminUsersMessage] = useState("");
   const [adminUserSearch, setAdminUserSearch] = useState("");
   const [adminRoleSavingId, setAdminRoleSavingId] = useState("");
-  const [newFacultyName, setNewFacultyName] = useState("");
-  const [newFacultyEmail, setNewFacultyEmail] = useState("");
-  const [newFacultyPassword, setNewFacultyPassword] = useState("");
-  const [facultyAccountCreating, setFacultyAccountCreating] = useState(false);
   // ATTENDANCE MANAGEMENT
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [attendanceLoading, setAttendanceLoading] = useState(false);
@@ -2853,7 +3704,15 @@ function Dashboard({ onBack }) {
   const [attendanceDate, setAttendanceDate] = useState(new Date().toLocaleDateString("en-CA"));
   const [attendanceStatus, setAttendanceStatus] = useState("Present");
 
-
+  // STUDENT FEEDBACK & COURSE RATINGS
+  const [courseFeedback, setCourseFeedback] = useState([]);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [feedbackSaving, setFeedbackSaving] = useState(false);
+  const [feedbackError, setFeedbackError] = useState("");
+  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [feedbackCourse, setFeedbackCourse] = useState("Python Programming");
+  const [feedbackRating, setFeedbackRating] = useState("5");
+  const [feedbackComment, setFeedbackComment] = useState("");
   const [facultyResources, setFacultyResources] = useState([]);
   const [facultyLoading, setFacultyLoading] = useState(false);
   const [facultySaving, setFacultySaving] = useState(false);
@@ -3054,6 +3913,84 @@ function Dashboard({ onBack }) {
     return () => unsubscribe();
   }, [accountRole]);
 
+  // Load course feedback for course averages; faculty/admin can also review all comments.
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!user) { setCourseFeedback([]); return; }
+      try {
+        setFeedbackLoading(true);
+        // Firestore rules do not filter query results. Students must query only
+        // documents whose studentId matches their authenticated Firebase UID.
+        const feedbackRef = collection(db, "courseFeedback");
+        const feedbackQuery = ["faculty", "admin"].includes(accountRole)
+          ? query(feedbackRef)
+          : query(feedbackRef, where("studentId", "==", user.uid));
+        const snapshot = await getDocs(feedbackQuery);
+        const records = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+        records.sort((a, b) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
+        setCourseFeedback(records);
+        setFeedbackError("");
+      } catch (err) {
+        console.error("Course feedback loading error:", err);
+        setFeedbackError("Could not load course feedback. Check the Course Feedback Firestore rules.");
+      } finally { setFeedbackLoading(false); }
+    });
+    return () => unsubscribe();
+  }, [accountRole]);
+
+  async function saveCourseFeedback(event) {
+    event.preventDefault();
+    const user = auth.currentUser;
+    const rating = Number(feedbackRating);
+    const comment = feedbackComment.trim();
+    if (!user) { setFeedbackError("Please sign in to submit feedback."); return; }
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) { setFeedbackError("Choose a rating from 1 to 5 stars."); return; }
+    if (!comment) { setFeedbackError("Please write a short comment about this course."); return; }
+    const feedbackId = `${user.uid}_${feedbackCourse.replace(/[^a-zA-Z0-9]/g, "_")}`;
+    const existing = courseFeedback.find((item) => item.id === feedbackId);
+    try {
+      setFeedbackSaving(true); setFeedbackError(""); setFeedbackMessage("");
+      const payload = {
+        studentId: user.uid,
+        studentName: profile.name || user.displayName || "Student",
+        course: feedbackCourse,
+        rating,
+        comment,
+        createdAt: existing?.createdAt || serverTimestamp(),
+        updatedAt: serverTimestamp()
+      };
+      await setDoc(doc(db, "courseFeedback", feedbackId), payload, { merge: true });
+      setCourseFeedback((items) => [{ ...existing, ...payload, id: feedbackId, updatedAt: new Date() }, ...items.filter((item) => item.id !== feedbackId)]);
+      setFeedbackMessage(existing ? "Your feedback was updated successfully." : "Thank you! Your course feedback was submitted.");
+      setFeedbackComment("");
+    } catch (err) {
+      console.error("Course feedback save error:", err);
+      setFeedbackError("Could not save feedback. Check the Course Feedback Firestore rules and try again.");
+    } finally { setFeedbackSaving(false); }
+  }
+
+  function editCourseFeedback(item) {
+    setFeedbackCourse(item.course);
+    setFeedbackRating(String(item.rating));
+    setFeedbackComment(item.comment || "");
+    setFeedbackMessage("You are editing your previous feedback. Submit to save your changes.");
+    setFeedbackError("");
+    document.getElementById("course-feedback")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  async function deleteCourseFeedback(item) {
+    const user = auth.currentUser;
+    if (!user || item.studentId !== user.uid) return;
+    try {
+      await deleteDoc(doc(db, "courseFeedback", item.id));
+      setCourseFeedback((items) => items.filter((entry) => entry.id !== item.id));
+      setFeedbackMessage("Your feedback was deleted.");
+      if (feedbackCourse === item.course) setFeedbackComment("");
+    } catch (err) {
+      console.error("Course feedback delete error:", err);
+      setFeedbackError("Could not delete your feedback. Check your Firestore rules.");
+    }
+  }
 
   async function saveAttendance(event) {
     event.preventDefault();
@@ -3106,7 +4043,9 @@ function Dashboard({ onBack }) {
     fontSize: "Medium",
     highContrast: false,
     reducedMotion: false,
-    readingComfort: false
+    readingComfort: false,
+    theme: "Light",
+    courseUpdates: true
   };
   const [learningPreferences, setLearningPreferences] = useState(defaultLearningPreferences);
   const [preferencesLoading, setPreferencesLoading] = useState(true);
@@ -3145,6 +4084,20 @@ function Dashboard({ onBack }) {
     setLearningPreferences((current) => ({ ...current, [key]: value }));
     setPreferencesMessage("");
   }
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const theme = learningPreferences.theme || "Light";
+    root.dataset.smartlearnTheme = theme === "Auto" ? (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light") : theme.toLowerCase();
+    root.style.fontSize = ({ Small: "14px", Medium: "16px", Large: "18px", "Extra large": "20px" })[learningPreferences.fontSize] || "16px";
+    root.classList.toggle("smartlearn-high-contrast", Boolean(learningPreferences.highContrast));
+    root.classList.toggle("smartlearn-reduced-motion", Boolean(learningPreferences.reducedMotion));
+    return () => {
+      delete root.dataset.smartlearnTheme;
+      root.style.fontSize = "";
+      root.classList.remove("smartlearn-high-contrast", "smartlearn-reduced-motion");
+    };
+  }, [learningPreferences.theme, learningPreferences.fontSize, learningPreferences.highContrast, learningPreferences.reducedMotion]);
 
   async function saveLearningPreferences() {
     const user = auth.currentUser;
@@ -4608,34 +5561,6 @@ function Dashboard({ onBack }) {
     }
   }
 
-  // ACCOUNT ACTIONS — use the existing Firebase Authentication account.
-  async function handlePasswordReset() {
-    const email = auth.currentUser?.email;
-    if (!email) {
-      window.alert("No signed-in email address was found.");
-      return;
-    }
-    try {
-      await sendPasswordResetEmail(auth, email);
-      window.alert(`Password reset instructions have been sent to ${email}.`);
-    } catch (err) {
-      console.error("Password reset request failed:", err);
-      window.alert(err?.message || "Could not send the password reset email. Please try again.");
-    }
-  }
-
-  async function handleLogout() {
-    const confirmed = window.confirm("Are you sure you want to log out of SmartLearn AI?");
-    if (!confirmed) return;
-    try {
-      await signOut(auth);
-      if (typeof onBack === "function") onBack();
-    } catch (err) {
-      console.error("Logout failed:", err);
-      window.alert(err?.message || "Logout failed. Please try again.");
-    }
-  }
-
   // SAVE STUDENT PROFILE TO FIRESTORE
   async function saveProfile(event) {
     event.preventDefault();
@@ -4813,7 +5738,7 @@ function Dashboard({ onBack }) {
       }
       const payload = {
         title: learningResourceTitle.trim(), course: learningResourceCourse,
-        subject: learningResourceSubject.trim(), description: learningResourceDescription.trim(),
+        level: learningResourceLevel, subject: learningResourceSubject.trim(), description: learningResourceDescription.trim(),
         resourceType: learningResourceType, url: learningResourceType === "video" ? learningResourceUrl.trim() : "",
         file: learningResourceType === "file" ? fileData : null,
         status: learningResourceStatus, createdBy: existing?.createdBy || user.uid,
@@ -4833,7 +5758,7 @@ function Dashboard({ onBack }) {
         setLearningResourceMessage(learningResourceStatus === "published" ? "Resource published to the student library." : "Resource saved as a draft.");
       }
       setEditingLearningResourceId(null); setLearningResourceTitle(""); setLearningResourceSubject("");
-      setLearningResourceDescription(""); setLearningResourceUrl(""); setLearningResourceFile(null);
+      setLearningResourceLevel("Beginner"); setLearningResourceDescription(""); setLearningResourceUrl(""); setLearningResourceFile(null);
       setLearningResourceType("file"); setLearningResourceStatus("published");
       const picker = document.getElementById("learning-resource-file"); if (picker) picker.value = "";
     } catch (err) {
@@ -4845,7 +5770,7 @@ function Dashboard({ onBack }) {
   function editLearningResource(item) {
     setEditingLearningResourceId(item.id); setLearningResourceTitle(item.title || "");
     setLearningResourceCourse(item.course || learningResourceCourses[0]); setLearningResourceSubject(item.subject || "");
-    setLearningResourceDescription(item.description || ""); setLearningResourceType(item.resourceType || (item.url ? "video" : "file"));
+    setLearningResourceLevel(item.level || "Beginner"); setLearningResourceDescription(item.description || ""); setLearningResourceType(item.resourceType || (item.url ? "video" : "file"));
     setLearningResourceUrl(item.url || ""); setLearningResourceStatus(item.status || "draft");
     setLearningResourceFile(null); setLearningResourceError(""); setLearningResourceMessage("Editing selected resource.");
     document.getElementById("learning-resources")?.scrollIntoView({ behavior: "smooth" });
@@ -5046,76 +5971,15 @@ function Dashboard({ onBack }) {
     }
   }
 
-  async function createFacultyAccount(event) {
-    event.preventDefault();
-    if (accountRole !== "admin" || !auth.currentUser) {
-      setAdminUsersError("Only a signed-in admin can create faculty accounts.");
-      return;
-    }
-
-    const name = newFacultyName.trim();
-    const email = newFacultyEmail.trim().toLowerCase();
-    if (name.length < 2 || !email || newFacultyPassword.length < 8) {
-      setAdminUsersError("Enter the faculty name, a valid email address, and a password with at least 8 characters.");
-      return;
-    }
-
-    setFacultyAccountCreating(true);
-    setAdminUsersError("");
-    setAdminUsersMessage("");
-    try {
-      const idToken = await auth.currentUser.getIdToken();
-      const response = await fetch(`${API_URL}/admin/faculty`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`
-        },
-        body: JSON.stringify({
-          display_name: name,
-          email,
-          password: newFacultyPassword
-        })
-      });
-
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(result.detail || "Faculty account creation failed.");
-      }
-
-      const createdFaculty = result.faculty;
-      setAdminUsers((current) => [
-        ...current.filter((item) => item.id !== createdFaculty.uid),
-        {
-          id: createdFaculty.uid,
-          uid: createdFaculty.uid,
-          name: createdFaculty.name,
-          displayName: createdFaculty.name,
-          email: createdFaculty.email,
-          role: "faculty"
-        }
-      ].sort((a, b) => String(a.name || a.email || a.id).localeCompare(String(b.name || b.email || b.id))));
-      setNewFacultyName("");
-      setNewFacultyEmail("");
-      setNewFacultyPassword("");
-      setAdminUsersMessage(`Faculty account created for ${createdFaculty.email}. Share the initial password securely with the faculty member.`);
-    } catch (error) {
-      console.error("Faculty account creation error:", error);
-      setAdminUsersError(error.message || "Could not create the faculty account. Check that the backend is running.");
-    } finally {
-      setFacultyAccountCreating(false);
-    }
-  }
-
-  // ROLE-SPECIFIC SIDEBAR NAVIGATION
-  // Students, faculty and admins see different workspaces and menu items.
-  const studentNavItems = [
+  // SIDEBAR NAVIGATION
+  const navItems = [
     ["dashboard", "🏠", "Dashboard"],
     ["my-courses", "📚", "My Courses"],
     ["ai-tools", "✨", "AI Study Tools"],
     ["smart-tutor", "🤖", "WiZiAI Smart Tutor"],
     ["quiz-generator", "🧠", "Quiz Generator"],
     ["assessment-center", "📝", "Assessment Center"],
+    ["career-center", "🚀", "Career & Placement"],
     ["summarizer", "📝", "Smart Summaries"],
     ["study-materials", "📂", "Study Materials"],
     ["learning-resources", "📚", "Learning Resources"],
@@ -5127,53 +5991,30 @@ function Dashboard({ onBack }) {
     ["study-planner", "📅", "Study Planner"],
     ["weekly-timetable", "🗓️", "Weekly Timetable"],
     ["attendance", "📅", "Attendance"],
+    ["course-feedback", "⭐", "Course Feedback"],
     ["announcements", "📣", `Announcements${publishedCourseContent.filter((item) => String(item.type || "").toLowerCase() === "announcement" && !announcementReads[item.id]).length ? ` (${publishedCourseContent.filter((item) => String(item.type || "").toLowerCase() === "announcement" && !announcementReads[item.id]).length})` : ""}`],
     ["study-reminders", "🔔", "Reminders & Notifications"],
     ["learning-goals", "🎯", "Learning Goals & Streaks"],
     ["assignments", "📋", "Assignments"],
     ["course-discussions", "💬", "Discussion Forum"],
     ["study-groups", "👥", "Study Groups"],
+    ["peer-challenges", "🏆", "Peer Challenges"],
+    ["practice-lab", "🧪", "Interactive Practice Lab"],
     ["digital-library", "📚", "Digital Library & Notes"],
+    ["exam-simulator", "📝", "Smart Exam Simulator"],
+    ["interview-prep-studio", "🎤", "AI Interview Preparation Studio"],
     ["educational-escape-room", "🗝️", "AI Educational Escape Room"],
+    ["ai-debate-arena", "🏆", "AI Debate Arena"],
     ["concept-map-studio", "🧠", "Concept Map Studio"],
     ["accessibility-assistant", "♿", "Accessibility Assistant"],
     ["profile", "👤", "My Profile"],
-    ["settings", "⚙️", "Settings"]
+    ["settings", "⚙️", "Settings"],
+    ...(accountRole === "admin" ? [["admin-panel", "🛡️", "Admin Dashboard"]] : []),
+    ...(["faculty", "admin"].includes(accountRole) ? [["faculty-panel", "🎓", "Faculty / Admin Panel"]] : [])
   ];
-
-  const facultyNavItems = [
-    ["dashboard", "🏠", "Faculty Dashboard"],
-    ["learning-resources", "📚", "Course Materials & PDF Uploads"],
-    ["faculty-panel", "🎓", "Manage Course Content"],
-    ["assessment-center", "📝", "Assessments"],
-    ["assignments", "📋", "Assignments & Submissions"],
-    ["announcements", "📣", "Announcements"],
-    ["course-discussions", "💬", "Student Questions"],
-    ["profile", "👤", "My Profile"],
-    ["settings", "⚙️", "Settings"]
-  ];
-
-  const adminNavItems = [
-    ["dashboard", "🏠", "Admin Dashboard"],
-    ["admin-panel", "🛡️", "Manage Accounts"],
-    ["faculty-panel", "🎓", "Course Management"],
-    ["learning-resources", "📚", "Course Materials & PDF Uploads"],
-    ["assessment-center", "📝", "Assessments"],
-    ["assignments", "📋", "Assignments & Submissions"],
-    ["announcements", "📣", "Announcements"],
-    ["course-discussions", "💬", "Student Questions"],
-    ["profile", "👤", "My Profile"],
-    ["settings", "⚙️", "Settings"]
-  ];
-
-  const navItems = accountRole === "admin"
-    ? adminNavItems
-    : accountRole === "faculty"
-      ? facultyNavItems
-      : studentNavItems;
 
   return (
-    <div className="dashboard-layout" data-dashboard-role={accountRole}>
+    <div className="dashboard-layout">
       <aside className="dashboard-sidebar">
         <a
           href="#dashboard"
@@ -5214,8 +6055,8 @@ function Dashboard({ onBack }) {
       <main className="dashboard-main">
         <header className="dashboard-topbar" id="dashboard">
           <div>
-            <h2>{accountRole === "admin" ? "Admin Dashboard" : accountRole === "faculty" ? "Faculty Dashboard" : "Student Dashboard"}</h2>
-            <p>{accountRole === "admin" ? "Manage accounts, faculty access and learning operations." : accountRole === "faculty" ? "Manage your courses, publish learning materials and support students." : "Your personal SmartLearn AI learning workspace."}</p>
+            <h2>Dashboard</h2>
+            <p>Your personal SmartLearn AI learning workspace.</p>
           </div>
 
           <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 16, marginLeft: "auto" }}>
@@ -5264,11 +6105,13 @@ function Dashboard({ onBack }) {
         {/* WELCOME */}
         <section className="dashboard-welcome">
           <div>
-            <span>{accountRole === "admin" ? "PLATFORM ADMINISTRATION" : accountRole === "faculty" ? "FACULTY WORKSPACE" : "YOUR LEARNING JOURNEY"}</span>
-            <h1>Welcome, {profile.name || (accountRole === "faculty" ? "Faculty" : accountRole === "admin" ? "Admin" : "Student")}! 👋</h1>
-            <p>{accountRole === "admin" ? "Oversee SmartLearn AI accounts and keep course operations organized." : accountRole === "faculty" ? "Upload course materials, publish lessons and announcements, and help students." : "Keep learning, keep improving, and achieve your goals with SmartLearn AI."}</p>
-            <button type="button" onClick={() => goTo(accountRole === "admin" ? "admin-panel" : accountRole === "faculty" ? "faculty-panel" : "my-courses")}>
-              {accountRole === "admin" ? "Manage Accounts →" : accountRole === "faculty" ? "Open Faculty Panel →" : "Continue Learning →"}
+            <span>YOUR LEARNING JOURNEY</span>
+            <h1>Welcome Back, {profile.name || "Student"}! 👋</h1>
+            <p>
+              Keep learning, keep improving, and achieve your goals with SmartLearn AI.
+            </p>
+            <button type="button" onClick={() => goTo("my-courses")}>
+              Continue Learning →
             </button>
           </div>
 
@@ -5300,6 +6143,29 @@ function Dashboard({ onBack }) {
               <p className="section-description">
                 Courses loaded from your Python FastAPI backend.
               </p>
+            </div>
+          </div>
+
+          <div className="workspace-card" style={{ padding: 18, marginBottom: 18 }}>
+            <h3 style={{ marginTop: 0, color: "#18334f" }}>Choose learning level</h3>
+            <p className="section-description" style={{ marginBottom: 12 }}>Select any level to view faculty notes and learning materials shared for that level.</p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+              {[
+                ["all", "All Levels"],
+                ["Beginner", "Beginner"],
+                ["Intermediate", "Intermediate"],
+                ["Advanced", "Advanced"]
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={courseNotesLevelFilter === value ? "primary-action" : "secondary-action"}
+                  aria-pressed={courseNotesLevelFilter === value}
+                  onClick={() => setCourseNotesLevelFilter(value)}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -5359,9 +6225,50 @@ function Dashboard({ onBack }) {
             </div>
           )}
 
+          {/* PUBLISHED FACULTY NOTES — filtered by the selected learning level */}
+          <div style={{ marginTop: 28 }}>
+            <div className="dashboard-section-heading">
+              <div>
+                <span>FACULTY-SHARED MATERIALS</span>
+                <h2>Course Notes & Learning Materials</h2>
+                <p className="section-description">Published notes from faculty across all courses. Choose All Levels, Beginner, Intermediate or Advanced above.</p>
+              </div>
+              <span className="settings-status">{learningResources.filter((item) => item.status === "published" && (courseNotesLevelFilter === "all" || (item.level || "Beginner") === courseNotesLevelFilter)).length} materials</span>
+            </div>
+
+            {learningResourcesLoading && <p className="demo-note">Loading published faculty notes...</p>}
+            {!learningResourcesLoading && learningResourceError && <p className="auth-error" role="alert">{learningResourceError}</p>}
+            {!learningResourcesLoading && learningResources.filter((item) => item.status === "published" && (courseNotesLevelFilter === "all" || (item.level || "Beginner") === courseNotesLevelFilter)).length === 0 && (
+              <div className="workspace-card" style={{ padding: 18 }}>
+                <h3>No published notes for this level yet</h3>
+                <p className="demo-note">Faculty notes will appear here after they publish them. Try another level or select All Levels.</p>
+              </div>
+            )}
+            <div className="dashboard-course-grid">
+              {learningResources.filter((item) => item.status === "published" && (courseNotesLevelFilter === "all" || (item.level || "Beginner") === courseNotesLevelFilter)).map((item) => (
+                <article className="dashboard-course-card" key={`course-note-${item.id}`}>
+                  <div className="course-card-meta">
+                    <span>{item.level || "Beginner"}</span>
+                    <span>{item.course || "Course material"}</span>
+                  </div>
+                  <h3>{item.resourceType === "video" ? "▶️ " : "📄 "}{item.title}</h3>
+                  {item.subject && <p><strong>Topic:</strong> {item.subject}</p>}
+                  <p>{item.description || "Learning material shared by your faculty."}</p>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                    {item.resourceType === "video" && item.url ? (
+                      <a className="primary-action" href={item.url} target="_blank" rel="noreferrer">Open video</a>
+                    ) : item.file?.path ? (
+                      <button type="button" className="primary-action" onClick={() => downloadLearningResource(item)}>Download Notes</button>
+                    ) : <span className="demo-note">No downloadable file attached.</span>}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
+
           {/* COURSE DETAILS AND LESSONS */}
           {selectedCourse && (
-            <div className="workspace-card course-details-panel">
+            <div id="course-details-panel" className="workspace-card course-details-panel">
               <button
                 type="button"
                 className="secondary-action"
@@ -5572,7 +6479,7 @@ function Dashboard({ onBack }) {
 
                 {/* SELECTED LESSON */}
                 {selectedLesson && (
-                  <div className="selected-lesson-panel">
+                  <div id="selected-lesson-panel" className="selected-lesson-panel">
                     <button
                       type="button"
                       className="secondary-action"
@@ -5617,7 +6524,7 @@ function Dashboard({ onBack }) {
                     </div>
 
                     {selectedTopic && (
-                      <div className="topic-learning-content">
+                      <div id="topic-learning-content" className="topic-learning-content">
                         {(() => {
                           const title = selectedTopic.title.toLowerCase();
                           const isWhatPython = title.includes("what is python");
@@ -6007,6 +6914,7 @@ function Dashboard({ onBack }) {
         </section>
 
         <AssessmentCenter accountRole={accountRole} />
+        <CareerPlacementCenter accountRole={accountRole} />
 
         {/* SMART SUMMARIES */}
         <section className="dashboard-section" id="summarizer">
@@ -6991,27 +7899,29 @@ function Dashboard({ onBack }) {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: 12 }}>
                 <label className="full-label">Course<select value={learningResourceCourse} onChange={(e) => setLearningResourceCourse(e.target.value)}>{learningResourceCourses.map((course) => <option key={course}>{course}</option>)}</select></label>
                 <label className="full-label">Subject / topic<input value={learningResourceSubject} onChange={(e) => setLearningResourceSubject(e.target.value)} placeholder="e.g. Functions and modules" /></label>
+                <label className="full-label">Learning level<select value={learningResourceLevel} onChange={(e) => setLearningResourceLevel(e.target.value)}><option value="Beginner">Beginner</option><option value="Intermediate">Intermediate</option><option value="Advanced">Advanced</option></select></label>
                 <label className="full-label">Resource type<select value={learningResourceType} onChange={(e) => setLearningResourceType(e.target.value)}><option value="file">Document / notes</option><option value="video">Video link</option></select></label>
               </div>
               <label className="full-label">Description<textarea rows={2} value={learningResourceDescription} onChange={(e) => setLearningResourceDescription(e.target.value)} placeholder="What will students learn from this resource?" /></label>
               {learningResourceType === "file" ? <label className="full-label">Upload file (PDF, PPT, PPTX, DOC, DOCX, TXT, MD — max 25 MB)<input id="learning-resource-file" type="file" accept=".pdf,.ppt,.pptx,.doc,.docx,.txt,.md" onChange={(e) => setLearningResourceFile(e.target.files?.[0] || null)} />{learningResourceFile && <small>{learningResourceFile.name} · {(learningResourceFile.size / 1024 / 1024).toFixed(2)} MB</small>}</label> : <label className="full-label">Video URL<input type="url" value={learningResourceUrl} onChange={(e) => setLearningResourceUrl(e.target.value)} placeholder="https://www.youtube.com/watch?v=..." required /></label>}
               <label className="full-label">Publication status<select value={learningResourceStatus} onChange={(e) => setLearningResourceStatus(e.target.value)}><option value="published">Published — visible to students</option><option value="draft">Draft — faculty/admin only</option></select></label>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button className="primary-action" type="submit" disabled={learningResourceSaving}>{learningResourceSaving ? "Saving..." : editingLearningResourceId ? "Update Resource" : "Publish Resource"}</button>{editingLearningResourceId && <button className="secondary-action" type="button" onClick={() => { setEditingLearningResourceId(null); setLearningResourceTitle(""); setLearningResourceSubject(""); setLearningResourceDescription(""); setLearningResourceUrl(""); setLearningResourceFile(null); setLearningResourceMessage(""); }}>Cancel edit</button>}</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button className="primary-action" type="submit" disabled={learningResourceSaving}>{learningResourceSaving ? "Saving..." : editingLearningResourceId ? "Update Resource" : "Publish Resource"}</button>{editingLearningResourceId && <button className="secondary-action" type="button" onClick={() => { setEditingLearningResourceId(null); setLearningResourceTitle(""); setLearningResourceSubject(""); setLearningResourceLevel("Beginner"); setLearningResourceDescription(""); setLearningResourceUrl(""); setLearningResourceFile(null); setLearningResourceMessage(""); }}>Cancel edit</button>}</div>
             </form>
           </div>}
           <div className="workspace-card" style={{ padding: 18, marginBottom: 18 }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 12 }}>
               <label className="full-label">Search resources<input type="search" value={learningResourceSearch} onChange={(e) => setLearningResourceSearch(e.target.value)} placeholder="Search title, topic or description" /></label>
+              <label className="full-label">Choose learning level<select value={learningResourceLevelFilter} onChange={(e) => setLearningResourceLevelFilter(e.target.value)}><option value="all">All levels — Beginner, Intermediate & Advanced</option><option value="Beginner">Beginner</option><option value="Intermediate">Intermediate</option><option value="Advanced">Advanced</option></select></label>
               <label className="full-label">Filter by course<select value={learningResourceCourseFilter} onChange={(e) => setLearningResourceCourseFilter(e.target.value)}><option value="all">All courses</option>{learningResourceCourses.map((course) => <option key={course}>{course}</option>)}</select></label>
             </div>
           </div>
           {learningResourcesLoading ? <p className="demo-note">Loading learning resources...</p> : null}
-          {!learningResourcesLoading && learningResources.filter((item) => (learningResourceCourseFilter === "all" || item.course === learningResourceCourseFilter) && `${item.title} ${item.subject || ""} ${item.description || ""} ${item.course || ""}`.toLowerCase().includes(learningResourceSearch.toLowerCase())).length === 0 && <div className="workspace-card"><h3>No resources found</h3><p className="demo-note">Try another search or course filter. Published materials from faculty will appear here.</p></div>}
+          {!learningResourcesLoading && learningResources.filter((item) => (learningResourceLevelFilter === "all" || (item.level || "Beginner") === learningResourceLevelFilter) && (learningResourceCourseFilter === "all" || item.course === learningResourceCourseFilter) && `${item.title} ${item.subject || ""} ${item.description || ""} ${item.course || ""} ${item.level || "Beginner"}`.toLowerCase().includes(learningResourceSearch.toLowerCase())).length === 0 && <div className="workspace-card"><h3>No resources found</h3><p className="demo-note">Try another search or course filter. Published materials from faculty will appear here.</p></div>}
           <div className="dashboard-course-grid">
-            {learningResources.filter((item) => (learningResourceCourseFilter === "all" || item.course === learningResourceCourseFilter) && `${item.title} ${item.subject || ""} ${item.description || ""} ${item.course || ""}`.toLowerCase().includes(learningResourceSearch.toLowerCase())).map((item) => {
+            {learningResources.filter((item) => (learningResourceLevelFilter === "all" || (item.level || "Beginner") === learningResourceLevelFilter) && (learningResourceCourseFilter === "all" || item.course === learningResourceCourseFilter) && `${item.title} ${item.subject || ""} ${item.description || ""} ${item.course || ""} ${item.level || "Beginner"}`.toLowerCase().includes(learningResourceSearch.toLowerCase())).map((item) => {
               const canManage = accountRole === "admin" || (accountRole === "faculty" && item.createdBy === auth.currentUser?.uid);
               return <article className="dashboard-course-card" key={item.id}>
-                <div className="course-card-meta"><span>{item.course}</span><span>{item.resourceType === "video" ? "Video" : "Document"}</span></div>
+                <div className="course-card-meta"><span>{item.course}</span><span>{item.level || "Beginner"}</span><span>{item.resourceType === "video" ? "Video" : "Document"}</span></div>
                 <h3>{item.resourceType === "video" ? "▶️ " : "📄 "}{item.title}</h3>
                 {item.subject && <p><strong>Topic:</strong> {item.subject}</p>}
                 <p>{item.description || "Course learning resource shared by faculty."}</p>
@@ -7023,7 +7933,7 @@ function Dashboard({ onBack }) {
               </article>;
             })}
           </div>
-          <p className="demo-note">Files are stored in Firebase Storage and resource details in the learningResources Firestore collection. Students see published resources; faculty manage their own resources and admins can manage all resources. Firebase security rules must enforce these permissions on the server.</p>
+          <p className="demo-note">Students can choose All levels, Beginner, Intermediate or Advanced to find any published notes shared by faculty. Files are stored in Firebase Storage and resource details in the learningResources Firestore collection.</p>
         </section>
 
         {/* ADMIN DASHBOARD — visible only to the admin role */}
@@ -7044,25 +7954,6 @@ function Dashboard({ onBack }) {
               <div className="dashboard-stat-card"><span>🛡️</span><p>Admins</p><h2>{adminUsers.filter((item) => item.role === "admin").length}</h2></div>
             </div>
             <div className="workspace-card" style={{ padding: 22 }}>
-              <div style={{ marginBottom: 24, padding: 18, border: "1px solid #dce8f0", borderRadius: 12, background: "#f8fbfd" }}>
-                <h3 style={{ margin: "0 0 6px", color: "#18334f" }}>Create Faculty Account</h3>
-                <p className="demo-note">Create a new Firebase login and automatically assign the Faculty role. The admin account stays signed in.</p>
-                <form onSubmit={createFacultyAccount} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: 12, alignItems: "end" }}>
-                  <label className="full-label">Faculty full name
-                    <input type="text" value={newFacultyName} onChange={(event) => setNewFacultyName(event.target.value)} placeholder="Enter faculty name" minLength={2} maxLength={100} required />
-                  </label>
-                  <label className="full-label">Faculty email
-                    <input type="email" value={newFacultyEmail} onChange={(event) => setNewFacultyEmail(event.target.value)} placeholder="faculty@example.com" required />
-                  </label>
-                  <label className="full-label">Initial password
-                    <input type="password" value={newFacultyPassword} onChange={(event) => setNewFacultyPassword(event.target.value)} placeholder="At least 8 characters" minLength={8} maxLength={128} autoComplete="new-password" required />
-                  </label>
-                  <button type="submit" className="primary-action" disabled={facultyAccountCreating} style={{ minHeight: 42 }}>
-                    {facultyAccountCreating ? "Creating account..." : "Create Faculty Account"}
-                  </button>
-                </form>
-                <p className="demo-note" style={{ margin: "10px 0 0" }}>Use a temporary password and share it privately. Ask the faculty member to change it after signing in.</p>
-              </div>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                 <div><h3 style={{ margin: 0, color: "#18334f" }}>Account role management</h3><p className="demo-note">Search registered profiles and assign Student or Faculty access. Changes are enforced by Firestore rules.</p></div>
                 <button type="button" className="secondary-action" onClick={() => { setAdminUsersError(""); setAdminUsersMessage(""); setAdminUsersLoading(true); getDocs(collection(db, "users")).then((snapshot) => setAdminUsers(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })))).catch((err) => { console.error(err); setAdminUsersError("Could not refresh the user list. Check Firestore permissions."); }).finally(() => setAdminUsersLoading(false)); }}>Refresh users</button>
@@ -7173,6 +8064,50 @@ function Dashboard({ onBack }) {
             <p className="demo-note">Access is controlled by the role field in your Firestore user profile. Do not let users assign themselves faculty/admin roles. Published content is stored in the shared courseContent collection; configure the matching Firestore rules before using it with student accounts.</p>
           </section>
         )}
+
+        {/* STUDENT FEEDBACK & COURSE RATINGS */}
+        <section className="dashboard-section" id="course-feedback">
+          <div className="dashboard-section-heading">
+            <div><span>HELP US IMPROVE</span><h2>Student Feedback & Course Ratings</h2><p className="section-description">Rate each course from 1 to 5 stars and share what is working well or what could improve. You can edit or delete your own feedback at any time.</p></div>
+          </div>
+          {feedbackError && <p className="auth-error" role="alert">{feedbackError}</p>}
+          {feedbackMessage && <p className="success-message" role="status">{feedbackMessage}</p>}
+          {!["faculty", "admin"].includes(accountRole) && <form className="workspace-card" onSubmit={saveCourseFeedback} style={{ padding: 20, marginBottom: 20 }}>
+            <h3 style={{ color: "#18334f", marginTop: 0 }}>Share your course feedback</h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 14 }}>
+              <label className="full-label">Course<select value={feedbackCourse} onChange={(e) => { const nextCourse = e.target.value; const ownReview = courseFeedback.find((item) => item.studentId === auth.currentUser?.uid && item.course === nextCourse); setFeedbackCourse(nextCourse); setFeedbackRating(String(ownReview?.rating || 5)); setFeedbackComment(ownReview?.comment || ""); }}>{["Python Programming", "Java Programming", "Web Development", "Data Structures", "Artificial Intelligence", "Database Management"].map((name) => <option key={name}>{name}</option>)}</select></label>
+              <label className="full-label">Your rating<select value={feedbackRating} onChange={(e) => setFeedbackRating(e.target.value)}><option value="5">★★★★★ — Excellent</option><option value="4">★★★★☆ — Very good</option><option value="3">★★★☆☆ — Good</option><option value="2">★★☆☆☆ — Needs improvement</option><option value="1">★☆☆☆☆ — Poor</option></select></label>
+            </div>
+            <label className="full-label" style={{ display: "grid", gap: 7, marginTop: 14 }}>Your comments<textarea rows={4} maxLength={2000} value={feedbackComment} onChange={(e) => setFeedbackComment(e.target.value)} placeholder="Tell us about the lessons, explanations, exercises or areas we can improve..." required /></label>
+            <button className="primary-action" type="submit" disabled={feedbackSaving} style={{ marginTop: 14 }}>{feedbackSaving ? "Saving..." : (courseFeedback.some((item) => item.studentId === auth.currentUser?.uid && item.course === feedbackCourse) ? "Update My Feedback" : "Submit Feedback")}</button>
+          </form>}
+          <div className="workspace-card" style={{ padding: 20 }}>
+            <h3 style={{ color: "#18334f", marginTop: 0 }}>Course rating overview</h3>
+            {feedbackLoading ? <p className="demo-note">Loading course ratings...</p> : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 12 }}>
+              {["Python Programming", "Java Programming", "Web Development", "Data Structures", "Artificial Intelligence", "Database Management"].map((course) => {
+                const reviews = courseFeedback.filter((item) => item.course === course);
+                const average = reviews.length ? reviews.reduce((sum, item) => sum + Number(item.rating || 0), 0) / reviews.length : 0;
+                return <div key={course} style={{ border: "1px solid #e3eaf0", borderRadius: 12, padding: 14 }}><strong style={{ color: "#18334f" }}>{course}</strong><div style={{ color: "#d69e20", fontSize: 19, marginTop: 5 }}>{reviews.length ? `${average.toFixed(1)} / 5 ★` : "Not rated yet"}</div><small style={{ color: "#64748b" }}>{reviews.length} review(s)</small></div>;
+              })}
+            </div>}
+          </div>
+          <div className="workspace-card" style={{ padding: 20, marginTop: 18 }}>
+            <h3 style={{ color: "#18334f", marginTop: 0 }}>{["faculty", "admin"].includes(accountRole) ? "Student feedback received" : "My submitted feedback"}</h3>
+            {feedbackLoading ? <p className="demo-note">Loading feedback...</p> : (() => {
+              const visibleFeedback = ["faculty", "admin"].includes(accountRole) ? courseFeedback : courseFeedback.filter((item) => item.studentId === auth.currentUser?.uid);
+              return !visibleFeedback.length ? <p className="demo-note">No feedback has been submitted yet.</p> : <div style={{ display: "grid", gap: 12 }}>
+                {visibleFeedback.map((item) => <article key={item.id} style={{ border: "1px solid #e3eaf0", borderRadius: 12, padding: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}><strong style={{ color: "#18334f" }}>{item.course}</strong><span style={{ color: "#d69e20", fontWeight: 700 }}>{"★".repeat(Math.max(0, Math.min(5, Number(item.rating) || 0)))}{"☆".repeat(5 - Math.max(0, Math.min(5, Number(item.rating) || 0)))}</span></div>
+                  {["faculty", "admin"].includes(accountRole) && <small style={{ color: "#64748b" }}>Student: {item.studentName || "Student"}</small>}
+                  <p style={{ color: "#526174", whiteSpace: "pre-wrap", margin: "8px 0" }}>{item.comment}</p>
+                  <small style={{ color: "#64748b" }}>Last updated: {item.updatedAt?.toDate ? item.updatedAt.toDate().toLocaleDateString() : "Just now"}</small>
+                  {item.studentId === auth.currentUser?.uid && <div style={{ display: "flex", gap: 8, marginTop: 10 }}><button type="button" className="secondary-action" onClick={() => editCourseFeedback(item)}>Edit</button><button type="button" className="secondary-action" style={{ color: "#b42318" }} onClick={() => deleteCourseFeedback(item)}>Delete</button></div>}
+                </article>)}
+              </div>;
+            })()}
+          </div>
+          <p className="demo-note" style={{ marginTop: 12 }}>Feedback is stored in the Firestore <code>courseFeedback</code> collection. Students can edit or delete only their own review; faculty and admins can review submitted feedback.</p>
+        </section>
 
         {/* ASSIGNMENT MANAGEMENT & SUBMISSIONS */}
         <section className="dashboard-section" id="assignments">
@@ -7312,6 +8247,83 @@ function Dashboard({ onBack }) {
           </div>
         </section>
 
+        {/* FEATURE 19 — PEER LEARNING CHALLENGES */}
+        <section className="dashboard-section" id="peer-challenges">
+          <div className="dashboard-section-heading">
+            <div>
+              <span>PRACTISE • IMPROVE • ACHIEVE</span>
+              <h2>Peer Learning Challenges</h2>
+              <p className="section-description">Take short course-based challenges, get instant feedback, save your scores and compare your best results with fellow learners.</p>
+            </div>
+          </div>
+
+          <div className="workspace-card" style={{ padding: 20, marginBottom: 18 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <div><h3 style={{ color: "#18334f", margin: "0 0 5px" }}>Choose your challenge</h3><p className="demo-note" style={{ margin: 0 }}>Each correct answer earns equal points. Your best score appears on the leaderboard.</p></div>
+              <select aria-label="Select a peer learning challenge" value={selectedPeerChallengeId} onChange={(event) => choosePeerChallenge(event.target.value)} style={{ minWidth: 230 }}>
+                {peerLearningChallenges.map((challenge) => <option key={challenge.id} value={challenge.id}>{challenge.title}</option>)}
+              </select>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "14px 0" }}>
+              <span style={{ background: "#eaf7f5", color: "#087f78", borderRadius: 20, padding: "6px 11px", fontSize: 12, fontWeight: 700 }}>{selectedPeerChallenge.course}</span>
+              <span style={{ background: "#f1f5f9", color: "#475569", borderRadius: 20, padding: "6px 11px", fontSize: 12, fontWeight: 700 }}>{selectedPeerChallenge.level}</span>
+              <span style={{ background: "#fff7e8", color: "#946200", borderRadius: 20, padding: "6px 11px", fontSize: 12, fontWeight: 700 }}>{selectedPeerChallenge.points} points</span>
+            </div>
+            <p style={{ color: "#526174", marginTop: 0 }}>{selectedPeerChallenge.description}</p>
+            {peerChallengeError && <p className="auth-error" role="alert">{peerChallengeError}</p>}
+            {peerChallengeMessage && <p className="success-message" role="status">{peerChallengeMessage}</p>}
+            <form onSubmit={submitPeerChallenge}>
+              <div style={{ display: "grid", gap: 14 }}>
+                {selectedPeerChallenge.questions.map((question, index) => (
+                  <fieldset key={question.id} style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 16, minWidth: 0 }}>
+                    <legend style={{ padding: "0 7px", color: "#18334f", fontWeight: 700 }}>Question {index + 1}</legend>
+                    <p style={{ color: "#334155", fontWeight: 600, marginTop: 2 }}>{question.prompt}</p>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,210px),1fr))", gap: 9 }}>
+                      {question.options.map((option, optionIndex) => {
+                        const isChosen = Number(peerChallengeAnswers[question.id]) === optionIndex;
+                        const isCorrect = peerChallengeResult && optionIndex === question.answer;
+                        const isWrongChosen = peerChallengeResult && isChosen && optionIndex !== question.answer;
+                        return <label key={optionIndex} style={{ display: "flex", alignItems: "center", gap: 9, padding: 11, borderRadius: 9, border: `1px solid ${isCorrect ? "#20a36b" : isWrongChosen ? "#d94848" : isChosen ? "#139b91" : "#e2e8f0"}`, background: isCorrect ? "#ecfdf3" : isWrongChosen ? "#fff1f1" : isChosen ? "#effaf9" : "#fff", cursor: peerChallengeResult ? "default" : "pointer" }}>
+                          <input type="radio" name={question.id} value={optionIndex} checked={isChosen} disabled={!!peerChallengeResult} onChange={() => setPeerChallengeAnswers((current) => ({ ...current, [question.id]: optionIndex }))} />
+                          <span style={{ color: "#334155", fontSize: 14 }}>{option}</span>
+                        </label>;
+                      })}
+                    </div>
+                    {peerChallengeResult && <p style={{ color: "#167345", fontSize: 13, marginBottom: 0 }}><strong>{question.answer === Number(peerChallengeAnswers[question.id]) ? "Correct! " : "Explanation: "}</strong>{question.explanation}</p>}
+                  </fieldset>
+                ))}
+              </div>
+              {peerChallengeResult ? (
+                <div style={{ marginTop: 16, padding: 16, borderRadius: 12, background: "#effaf6", border: "1px solid #b9e8d2" }}>
+                  <h3 style={{ color: "#176b4a", margin: "0 0 5px" }}>Challenge completed: {peerChallengeResult.score}/{peerChallengeResult.totalPoints} points</h3>
+                  <p style={{ color: "#356653", margin: 0 }}>You answered {peerChallengeResult.correctCount} out of {peerChallengeResult.questionCount} questions correctly.</p>
+                  <button type="button" className="secondary-action" style={{ marginTop: 12 }} onClick={() => { setPeerChallengeAnswers({}); setPeerChallengeResult(null); setPeerChallengeMessage(""); setPeerChallengeError(""); }}>Try again</button>
+                </div>
+              ) : <button type="submit" className="primary-action" style={{ marginTop: 16 }} disabled={peerChallengeSaving}>{peerChallengeSaving ? "Saving score..." : "Submit Challenge"}</button>}
+            </form>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,300px),1fr))", gap: 18, alignItems: "start" }}>
+            <div className="workspace-card" style={{ padding: 20 }}>
+              <h3 style={{ color: "#18334f", marginTop: 0 }}>🏆 Leaderboard</h3>
+              <p className="demo-note">Top 10 best scores per learner and challenge.</p>
+              {peerChallengeLoading ? <p className="demo-note">Loading leaderboard...</p> : peerLeaderboard.length === 0 ? <p className="demo-note">No scores yet. Complete a challenge to be the first on the leaderboard.</p> : <div style={{ display: "grid", gap: 9 }}>
+                {peerLeaderboard.map((item, index) => <div key={`${item.challengeId}-${item.studentId}-${index}`} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: 11, borderRadius: 10, background: index === 0 ? "#fff8e8" : "#f7fafc", border: "1px solid #e7edf3" }}>
+                  <div style={{ minWidth: 0 }}><strong style={{ color: "#18334f" }}>{index + 1}. {item.studentName || "Learner"}</strong><div className="demo-note" style={{ marginTop: 3 }}>{item.challengeTitle || item.course || "Challenge"}</div></div>
+                  <strong style={{ color: "#139b91", whiteSpace: "nowrap" }}>{item.score}/{item.totalPoints}</strong>
+                </div>)}
+              </div>}
+            </div>
+            <div className="workspace-card" style={{ padding: 20 }}>
+              <h3 style={{ color: "#18334f", marginTop: 0 }}>Your Challenge History</h3>
+              {peerChallengeLoading ? <p className="demo-note">Loading your attempts...</p> : peerChallengeSubmissions.filter((item) => item.studentId === auth.currentUser?.uid).length === 0 ? <p className="demo-note">Your completed challenges will appear here.</p> : <div style={{ display: "grid", gap: 9 }}>
+                {peerChallengeSubmissions.filter((item) => item.studentId === auth.currentUser?.uid).slice(0, 8).map((item) => <div key={item.id} style={{ padding: 11, border: "1px solid #e7edf3", borderRadius: 10 }}><strong style={{ color: "#18334f" }}>{item.challengeTitle}</strong><div className="demo-note" style={{ marginTop: 4 }}>{item.course} · {item.correctCount}/{item.questionCount} correct</div><strong style={{ color: "#139b91" }}>{item.score}/{item.totalPoints} points</strong></div>)}
+              </div>}
+            </div>
+          </div>
+          <p className="demo-note" style={{ marginTop: 14 }}>Challenge answers are checked in the browser and each result is saved in Firestore <code>challengeSubmissions</code>. The leaderboard displays each learner's best score for each challenge.</p>
+        </section>
+
         {/* COURSE DISCUSSION FORUM */}
         <section className="dashboard-section" id="course-discussions">
           <div className="dashboard-section-heading"><div><span>LEARN TOGETHER</span><h2>Course Discussion Forum</h2><p className="section-description">Ask questions, share explanations and learn with students and faculty.</p></div></div>
@@ -7355,11 +8367,23 @@ function Dashboard({ onBack }) {
           <p className="demo-note" style={{ marginTop: 14 }}>Questions are saved in Firestore <code>courseDiscussions</code>; replies are saved in each question's <code>replies</code> subcollection.</p>
         </section>
 
+        {/* FEATURE 23 — INTERACTIVE PRACTICE LAB */}
+        <InteractivePracticeLab />
+
         {/* FEATURE 24 — DIGITAL LIBRARY & NOTES MANAGER */}
         <DigitalLibraryNotesManager />
 
+        {/* FEATURE 25 — SMART EXAM SIMULATOR */}
+        <SmartExamSimulator />
+
+        {/* FEATURE 26 — AI INTERVIEW PREPARATION STUDIO */}
+        <AIInterviewPreparationStudio />
+
         {/* FEATURE 27 — AI EDUCATIONAL ESCAPE ROOM */}
         <AIEducationalEscapeRoom />
+
+        {/* FEATURE 28 — AI DEBATE ARENA */}
+        <AIDebateArena />
 
         {/* FEATURE 22 — CONCEPT MAP & MIND MAP STUDIO */}
         <ConceptMapStudio />
@@ -7367,52 +8391,80 @@ function Dashboard({ onBack }) {
         {/* FEATURE 21 — ACCESSIBILITY & MULTILINGUAL LEARNING ASSISTANT */}
         <AccessibilityLearningAssistant onNavigate={goTo} navigationItems={navItems} />
 
-        {/* ACCOUNT SETTINGS — replaces the unwanted learning-preferences form */}
-        <section className="dashboard-section" id="settings">
+        {/* SETTINGS — ACCOUNT, NOTIFICATIONS, APPEARANCE & SECURITY */}
+        <section className="dashboard-section smart-settings" id="settings">
+          <style>{`
+            .smart-settings .settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+            .smart-settings .settings-panel{background:#fff;border:1px solid #dfe8f2;border-radius:18px;padding:22px;box-shadow:0 8px 24px rgba(20,45,75,.045);min-width:0}
+            .smart-settings .settings-panel h3{margin:0 0 18px;color:#142b49;font-size:20px}
+            .smart-settings .settings-muted{color:#71829b;font-size:13px;line-height:1.5}
+            .smart-settings .settings-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 0;border-bottom:1px solid #edf1f6}
+            .smart-settings .settings-row:last-child{border-bottom:0}
+            .smart-settings .settings-toggle{width:48px;height:27px;accent-color:#13a69b;cursor:pointer}
+            .smart-settings .settings-choice{border:1px solid #dbe5ef;border-radius:12px;padding:13px;background:#f8fafc;color:#213956;cursor:pointer;font-weight:700;min-width:82px}
+            .smart-settings .settings-choice.active{border:2px solid #13a69b;background:#e8faf7;color:#087e75}
+            .smart-settings .settings-action{border:1px solid #b9d8df;border-radius:10px;padding:10px 16px;background:#fff;color:#078e87;font-weight:700;cursor:pointer}
+            .smart-settings .settings-action.primary{background:#13a69b;color:#fff;border-color:#13a69b}
+            .smart-settings .settings-action:disabled{opacity:.6;cursor:not-allowed}
+            html[data-smartlearn-theme="dark"] .dashboard-layout{background:#0b1728!important;color:#e7eef8}
+            html[data-smartlearn-theme="dark"] .smart-settings .settings-panel{background:#14243a!important;border-color:#2c405a!important}
+            html[data-smartlearn-theme="dark"] .smart-settings .settings-panel h3,html[data-smartlearn-theme="dark"] .smart-settings .settings-panel strong{color:#e7eef8!important}
+            html[data-smartlearn-theme="dark"] .smart-settings .settings-muted{color:#a9bad0!important}
+            html[data-smartlearn-theme="dark"] .smart-settings .settings-row{border-color:#2c405a!important}
+            html[data-smartlearn-theme="dark"] .smart-settings .settings-choice{background:#1c304b;color:#e7eef8;border-color:#405675}
+            html[data-smartlearn-theme="dark"] .smart-settings .settings-choice.active{background:#124c4a;border-color:#13a69b}
+            html[data-smartlearn-theme="dark"] .smart-settings .settings-action:not(.primary){background:#1c304b;color:#7de2d8;border-color:#405675}
+            html.smartlearn-high-contrast .dashboard-layout{filter:contrast(1.12)}
+            html.smartlearn-reduced-motion *,html.smartlearn-reduced-motion *::before,html.smartlearn-reduced-motion *::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
+            @media(max-width:850px){.smart-settings .settings-grid{grid-template-columns:1fr}}
+          `}</style>
           <div className="dashboard-section-heading">
-            <div>
-              <span>ACCOUNT</span>
-              <h2>Account Settings</h2>
-              <p className="section-description">Manage your SmartLearn AI account and sign-in security.</p>
+            <div><span>PREFERENCES</span><h2>Settings</h2><p className="section-description">Manage your account and preferences in one place.</p></div>
+          </div>
+
+          <div className="settings-grid">
+            <div className="settings-panel">
+              <h3>👤 Account Settings</h3>
+              <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:18}}>
+                <div style={{width:68,height:68,borderRadius:"50%",background:"linear-gradient(135deg,#2787d5,#1762ad)",color:"white",display:"grid",placeItems:"center",fontSize:30,fontWeight:800}}>{(profile.name || auth.currentUser?.displayName || "S").slice(0,1).toUpperCase()}</div>
+                <div><strong style={{fontSize:18,color:"#142b49"}}>{profile.name || auth.currentUser?.displayName || "Student"}</strong><div className="settings-muted">{auth.currentUser?.email || profile.email || "Not signed in"}</div></div>
+              </div>
+              <div className="settings-row"><span><strong>Email</strong><div className="settings-muted">Your sign-in email address</div></span><span style={{color:"#526782",fontSize:13,overflowWrap:"anywhere"}}>{auth.currentUser?.email || profile.email || "—"}</span></div>
+              <div className="settings-row"><span><strong>Role</strong><div className="settings-muted">Your SmartLearn account role</div></span><span className="settings-status">{accountRole || "Student"}</span></div>
+              <div className="settings-row"><span><strong>Display name</strong><div className="settings-muted">Update your name in My Profile</div></span><button type="button" className="settings-action" onClick={() => goTo("profile")}>Edit profile</button></div>
+            </div>
+
+            <div className="settings-panel">
+              <h3>🔔 Notification Preferences</h3>
+              {[["courseUpdates","Course Updates","Get notified about new courses and learning content."],["studyReminders","Study Reminders","Receive reminders for planned study sessions."],["announcementAlerts","Announcements","Get important course announcements."],["deadlineAlerts","Assignment Deadlines","Receive alerts about upcoming assignment due dates."]].map(([key,title,description]) => <label className="settings-row" key={key} style={{cursor:"pointer"}}><span><strong>{title}</strong><div className="settings-muted">{description}</div></span><input className="settings-toggle" type="checkbox" checked={Boolean(learningPreferences[key])} onChange={(event) => updateLearningPreference(key,event.target.checked)} aria-label={title}/></label>)}
+            </div>
+
+            <div className="settings-panel">
+              <h3>🎨 Appearance</h3>
+              <strong style={{display:"block",marginBottom:10,color:"#263d59"}}>Theme</strong>
+              <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:22}}>{["Light","Dark","Auto"].map((theme) => <button type="button" key={theme} className={`settings-choice ${learningPreferences.theme===theme?"active":""}`} onClick={() => updateLearningPreference("theme",theme)}>{theme==="Light"?"☀️":theme==="Dark"?"🌙":"◐"} {theme}</button>)}</div>
+              <strong style={{display:"block",marginBottom:10,color:"#263d59"}}>Font Size</strong>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:8}}>{["Small","Medium","Large"].map((size) => <button type="button" key={size} className={`settings-choice ${learningPreferences.fontSize===size?"active":""}`} onClick={() => updateLearningPreference("fontSize",size)}>{size}</button>)}</div>
+              <div className="settings-muted" style={{marginTop:14}}>Accessibility options</div>
+              {[["highContrast","High contrast"],["reducedMotion","Reduce animations"],["readingComfort","Reading comfort"]].map(([key,title]) => <label className="settings-row" key={key}><strong>{title}</strong><input className="settings-toggle" type="checkbox" checked={Boolean(learningPreferences[key])} onChange={(event)=>updateLearningPreference(key,event.target.checked)} aria-label={title}/></label>)}
+            </div>
+
+            <div className="settings-panel">
+              <h3>🔐 Privacy &amp; Security</h3>
+              <div className="settings-row"><span><strong>Change Password</strong><div className="settings-muted">Receive a secure password-reset email.</div></span><button type="button" className="settings-action" onClick={async()=>{const email=auth.currentUser?.email;if(!email){setPreferencesError("Please sign in first.");return;}try{await sendPasswordResetEmail(auth,email);setPreferencesError("");setPreferencesMessage(`Password reset instructions sent to ${email}.`);}catch(error){setPreferencesError(error.message || "Could not send the password reset email.");}}}>Change</button></div>
+              <div className="settings-row"><span><strong>Download Your Data</strong><div className="settings-muted">Download a copy of your profile and preferences.</div></span><button type="button" className="settings-action" onClick={async()=>{const user=auth.currentUser;if(!user){setPreferencesError("Please sign in first.");return;}try{const userSnapshot=await getDoc(doc(db,"users",user.uid));const data={exportedAt:new Date().toISOString(),uid:user.uid,email:user.email,authDisplayName:user.displayName,profile:userSnapshot.exists()?userSnapshot.data():{},preferences:learningPreferences};const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="smartlearn-account-data.json";document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);setPreferencesError("");setPreferencesMessage("Your account profile and preferences were downloaded.");}catch(error){setPreferencesError(error.message || "Could not export your account data.");}}}>Download</button></div>
+              <div className="settings-row"><span><strong>Account Deletion</strong><div className="settings-muted">Contact your SmartLearn administrator to request account deletion.</div></span><span className="settings-status">Protected</span></div>
+              <p className="settings-muted" style={{marginTop:12}}>Your learning records are stored in your private Firebase account. Account deletion is not performed from this screen.</p>
             </div>
           </div>
 
-          <div className="workspace-card" style={{ padding: 24 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", paddingBottom: 20, borderBottom: "1px solid #e8eef3" }}>
-              <div style={{ width: 58, height: 58, borderRadius: "50%", display: "grid", placeItems: "center", background: "#e7f7f4", color: "#087f75", fontSize: 26 }}>👤</div>
-              <div style={{ flex: "1 1 220px" }}>
-                <h3 style={{ margin: "0 0 5px", color: "#18334f" }}>{profile.name || "SmartLearn user"}</h3>
-                <p style={{ margin: 0, color: "#718096" }}>{auth.currentUser?.email || profile.email || "No email available"}</p>
-                <span className="settings-status" style={{ display: "inline-block", marginTop: 8 }}>{accountRole ? `${accountRole.charAt(0).toUpperCase()}${accountRole.slice(1)} account` : "Student account"}</span>
-              </div>
-              <button type="button" className="secondary-action" onClick={() => goTo("profile")}>Edit Profile</button>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14, marginTop: 22 }}>
-              <div style={{ border: "1px solid #e2eaf0", borderRadius: 12, padding: 18 }}>
-                <div style={{ fontSize: 24, marginBottom: 8 }}>📧</div>
-                <h3 style={{ margin: "0 0 6px", color: "#18334f", fontSize: 16 }}>Account Email</h3>
-                <p style={{ margin: 0, color: "#718096", fontSize: 13, lineHeight: 1.5 }}>Your sign-in email is managed securely by Firebase Authentication.</p>
-                <p style={{ margin: "10px 0 0", color: "#34445a", fontSize: 13, overflowWrap: "anywhere" }}>{auth.currentUser?.email || "Not available"}</p>
-              </div>
-
-              <div style={{ border: "1px solid #e2eaf0", borderRadius: 12, padding: 18 }}>
-                <div style={{ fontSize: 24, marginBottom: 8 }}>🔒</div>
-                <h3 style={{ margin: "0 0 6px", color: "#18334f", fontSize: 16 }}>Password & Security</h3>
-                <p style={{ margin: "0 0 14px", color: "#718096", fontSize: 13, lineHeight: 1.5 }}>Receive a secure password-reset link at your registered email address.</p>
-                <button type="button" className="secondary-action" onClick={handlePasswordReset}>Send Password Reset Email</button>
-              </div>
-
-              <div style={{ border: "1px solid #f0d8d8", borderRadius: 12, padding: 18, background: "#fffafa" }}>
-                <div style={{ fontSize: 24, marginBottom: 8 }}>🚪</div>
-                <h3 style={{ margin: "0 0 6px", color: "#9f2525", fontSize: 16 }}>Logout</h3>
-                <p style={{ margin: "0 0 14px", color: "#718096", fontSize: 13, lineHeight: 1.5 }}>Sign out of your SmartLearn AI account on this device.</p>
-                <button type="button" onClick={handleLogout} style={{ border: 0, borderRadius: 8, padding: "10px 16px", background: "#b42318", color: "white", fontWeight: 700, cursor: "pointer" }}>Logout</button>
-              </div>
-            </div>
-
-            <p className="demo-note" style={{ margin: "20px 0 0" }}>Your account authentication is handled by Firebase. Your learning records and saved activities remain in your account when you log out.</p>
+          <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"center",marginTop:22}}>
+            <button type="button" className="settings-action primary" onClick={saveLearningPreferences} disabled={preferencesSaving}>{preferencesSaving?"Saving...":"✓ Save Preferences"}</button>
+            <button type="button" className="settings-action" onClick={()=>{setLearningPreferences(defaultLearningPreferences);setPreferencesMessage("");setPreferencesError("");}}>↻ Restore defaults</button>
           </div>
+          {preferencesMessage && <p role="status" style={{color:"#087b50",fontSize:13,marginTop:12}}>{preferencesMessage}</p>}
+          {preferencesError && <p role="alert" style={{color:"#b42318",fontSize:13,marginTop:12}}>{preferencesError}</p>}
+          <p className="settings-muted" style={{marginTop:12}}>Your preferences are saved privately in your Firebase account.</p>
         </section>
 
         <footer className="dashboard-footer">

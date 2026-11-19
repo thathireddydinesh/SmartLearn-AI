@@ -1,0 +1,26 @@
+
+/* SmartLearn AI - Separate Role Dashboards */
+
+.dashboard-layout[data-dashboard-role="faculty"] .student-only,
+.dashboard-layout[data-dashboard-role="admin"] .student-only {
+  display: none !important;
+}
+
+/* Faculty dashboard */
+.dashboard-layout[data-dashboard-role="faculty"] #admin-panel,
+.dashboard-layout[data-dashboard-role="faculty"] #career-center,
+.dashboard-layout[data-dashboard-role="faculty"] #ai-debate-arena {
+  display: none !important;
+}
+
+/* Admin dashboard */
+.dashboard-layout[data-dashboard-role="admin"] #career-center,
+.dashboard-layout[data-dashboard-role="admin"] #ai-debate-arena {
+  display: none !important;
+}
+
+/* Hide unwanted sections for staff */
+.dashboard-layout[data-dashboard-role="faculty"] .student-dashboard-section,
+.dashboard-layout[data-dashboard-role="admin"] .student-dashboard-section {
+  display: none !important;
+}
