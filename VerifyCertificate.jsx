@@ -2,8 +2,10 @@
 import { useEffect, useState } from "react";
 import "./VerifyCertificate.css";
 
-const API_URL =
-  import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+const API_URL = (
+  import.meta.env.VITE_API_URL ||
+  "https://smartlearn-ai-api.onrender.com"
+).replace(/\/+$/, "");
 
 function VerifyCertificate({ certificateId }) {
   const [loading, setLoading] = useState(true);
@@ -20,7 +22,9 @@ function VerifyCertificate({ certificateId }) {
         setCertificate(null);
 
         const response = await fetch(
-          `${API_URL}/api/certificates/verify/${encodeURIComponent(certificateId)}`
+          `${API_URL}/api/certificates/verify/${encodeURIComponent(
+            certificateId
+          )}`
         );
 
         if (!response.ok) {
@@ -31,7 +35,7 @@ function VerifyCertificate({ certificateId }) {
 
         if (!active) return;
 
-        if (data.valid === true) {
+        if (data.valid === true && data.certificate) {
           setCertificate(data.certificate);
         } else {
           setError("This certificate could not be verified.");
@@ -119,7 +123,7 @@ function VerifyCertificate({ certificateId }) {
           <div className="verify-result invalid">
             <div className="result-icon">✕</div>
             <h2>
-              {error.includes("connect")
+              {error.includes("connect") || error.includes("Server error")
                 ? "Verification Unavailable"
                 : "Invalid Certificate"}
             </h2>
