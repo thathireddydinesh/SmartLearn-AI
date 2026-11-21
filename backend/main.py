@@ -45,7 +45,7 @@ FIREBASE_PROJECT_ID = os.getenv(
 try:
     service_account_path = os.getenv(
         "GOOGLE_APPLICATION_CREDENTIALS",
-        "./firebase-service-account.json"
+        str(Path(__file__).resolve().parent / "firebase-service-account.json")
     ).strip()
 
     service_account_file = Path(service_account_path)
@@ -119,15 +119,28 @@ except Exception as error:
 
 
 # ============================================================
-# CORS CONFIGURATION
+# CORS CONFIGURATION (LOCAL + RENDER/VERCEL)
 # ============================================================
+
+# Set CORS_ORIGINS in Render to a comma-separated list of exact frontend
+# origins, for example:
+# https://your-project.vercel.app,https://www.your-custom-domain.com
+# Do not include paths or trailing slashes in the Render value.
+_default_cors_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://smart-learn-jzxbb9vz8-dines5.vercel.app",
+]
+_configured_cors_origins = os.getenv("CORS_ORIGINS", "")
+CORS_ORIGINS = list(dict.fromkeys(
+    origin.strip().rstrip("/")
+    for origin in (_default_cors_origins + _configured_cors_origins.split(","))
+    if origin and origin.strip()
+))
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173"
-    ],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -145,12 +158,13 @@ class QuizRequest(BaseModel):
     notes: str = Field(min_length=20)
 
     question_count: int = Field(
-        default=5,
+        default=10,
         ge=3,
-        le=10
+        le=20
     )
 
     difficulty: str = "Beginner"
+    question_type: str = "Multiple Choice"
 
 
 # ============================================================
@@ -1318,6 +1332,7 @@ def _health_payload():
         "firebase": "connected" if FIREBASE_READY else "not connected",
         "firebase_admin": FIREBASE_READY,
         "firebase_project_id": FIREBASE_PROJECT_ID,
+        "cors_origins_configured": len(CORS_ORIGINS),
         "ai_mode": "external-provider" if ai_key_present else "not-configured",
         "ai_configured": ai_key_present,
         "ai_provider": os.getenv("AI_PROVIDER", "openai-compatible"),
@@ -1703,10 +1718,37 @@ def generate_quiz(request: QuizRequest):
             difficulty=request.difficulty
         )
 
+        question_type = (request.question_type or "Multiple Choice").strip().lower()
+        if question_type in ("true or false", "true/false"):
+            for question_index, item in enumerate(questions):
+                correct = item["options"][item["answer"]]
+                # Alternate true and false statements using words from the supplied notes.
+                false_options = [value for value in item["options"] if value != correct]
+                make_true = question_index % 2 == 0
+                statement_answer = correct if make_true else random.choice(false_options)
+                item["question"] = item["question"].replace("________", statement_answer)
+                item["options"] = ["True", "False"]
+                item["answer"] = 0 if make_true else 1
+                item["type"] = "true_false"
+                item["explanation"] = f"The note-based answer is {correct}."
+        elif question_type == "short answer":
+            for item in questions:
+                correct = item["options"][item["answer"]]
+                item["question"] = item["question"]
+                item["answer_text"] = correct
+                item["answer"] = correct
+                item["options"] = []
+                item["type"] = "short_answer"
+                item["explanation"] = f"Expected answer: {correct}. This term appears in your supplied notes."
+        else:
+            for item in questions:
+                item["type"] = "multiple_choice"
+
         return {
             "title": f"{request.topic} Quiz",
             "topic": request.topic,
             "difficulty": request.difficulty,
+            "question_type": request.question_type,
             "questions": questions,
             "mode": "local-rule-based"
         }
