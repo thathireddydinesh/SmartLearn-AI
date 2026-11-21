@@ -25,7 +25,8 @@ import {
 } from "firebase/auth";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, getBlob, deleteObject } from "firebase/storage";
 
-const API_URL = "http://127.0.0.1:8000/api";
+const API_BASE_URL = (import.meta.env.VITE_API_URL || "https://smartlearn-ai-api.onrender.com").replace(/\/+$/, "");
+const API_URL = `${API_BASE_URL}/api`;
 const COURSES_URL = `${API_URL}/courses`;
 const QUIZ_URL = `${API_URL}/generate-quiz`;
 
@@ -713,7 +714,7 @@ ${safeJs}
         setJavaRunning(true);
         setStatus('Compiling and running Java program...');
         setOutput('Please wait...');
-        const response = await fetch('http://127.0.0.1:8000/api/java/run', {
+        const response = await fetch(`${API_URL}/java/run`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ code: javaCode, input: inputText })
@@ -4314,7 +4315,7 @@ function Dashboard({ onBack }) {
         console.error("Course loading error:", err);
 
         setError(
-          "Could not connect to the backend. Check that FastAPI is running at http://127.0.0.1:8000."
+          "Could not connect to the SmartLearn AI backend. Please try again later."
         );
       } finally {
         setLoading(false);
