@@ -2,7 +2,8 @@
 import { useEffect, useState } from "react";
 import "./VerifyCertificate.css";
 
-const API_URL = "http://127.0.0.1:8000";
+const API_URL =
+  import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 function VerifyCertificate({ certificateId }) {
   const [loading, setLoading] = useState(true);
@@ -21,6 +22,10 @@ function VerifyCertificate({ certificateId }) {
         const response = await fetch(
           `${API_URL}/api/certificates/verify/${encodeURIComponent(certificateId)}`
         );
+
+        if (!response.ok) {
+          throw new Error(`Server error: ${response.status}`);
+        }
 
         const data = await response.json();
 
@@ -44,7 +49,12 @@ function VerifyCertificate({ certificateId }) {
       }
     }
 
-    verifyCertificate();
+    if (certificateId) {
+      verifyCertificate();
+    } else {
+      setError("Certificate ID is missing.");
+      setLoading(false);
+    }
 
     return () => {
       active = false;
@@ -71,7 +81,7 @@ function VerifyCertificate({ certificateId }) {
 
         <div className="verify-id">
           <span>Certificate ID</span>
-          <strong>{certificateId}</strong>
+          <strong>{certificateId || "Not provided"}</strong>
         </div>
 
         {loading && (

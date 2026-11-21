@@ -45,36 +45,16 @@ const starterFlashcards = [
 ];
 
 
-// FEATURE 19 — PEER LEARNING CHALLENGES (curated practice questions with automatic scoring)
-const peerLearningChallenges = [
-  {
-    id: "python-foundations", title: "Python Foundations Sprint", course: "Python Programming", level: "Beginner", points: 30,
-    description: "Test variables, loops and basic Python output.",
-    questions: [
-      { id: "p1", prompt: "Which symbol is used for a single-line comment in Python?", options: ["//", "#", "<!--", "**"], answer: 1, explanation: "Python uses # to begin a single-line comment." },
-      { id: "p2", prompt: "What is the output of print(3 + 2 * 2)?", options: ["10", "7", "14", "9"], answer: 1, explanation: "Multiplication happens before addition, so 3 + 4 = 7." },
-      { id: "p3", prompt: "Which loop is commonly used to iterate over a list?", options: ["for", "switch", "repeat-until", "case"], answer: 0, explanation: "A for loop can visit each item in a list." }
-    ]
-  },
-  {
-    id: "web-basics", title: "Web Development Quick Challenge", course: "Web Development", level: "Beginner", points: 30,
-    description: "Check your understanding of HTML, CSS and JavaScript.",
-    questions: [
-      { id: "w1", prompt: "Which HTML element creates a hyperlink?", options: ["<link>", "<a>", "<href>", "<url>"], answer: 1, explanation: "The anchor element <a> creates a hyperlink." },
-      { id: "w2", prompt: "Which CSS property changes text colour?", options: ["font-style", "background", "color", "text-size"], answer: 2, explanation: "The color property sets the foreground text colour." },
-      { id: "w3", prompt: "Which keyword declares a block-scoped variable in JavaScript?", options: ["let", "echo", "define", "dim"], answer: 0, explanation: "let declares a block-scoped variable in JavaScript." }
-    ]
-  },
-  {
-    id: "database-basics", title: "Database Essentials Challenge", course: "Database Management", level: "Beginner", points: 30,
-    description: "Practise SQL basics, keys and query structure.",
-    questions: [
-      { id: "d1", prompt: "Which SQL command retrieves data from a table?", options: ["GET", "OPEN", "SELECT", "FETCH ALL"], answer: 2, explanation: "SELECT retrieves rows from one or more tables." },
-      { id: "d2", prompt: "What does a primary key do?", options: ["Uniquely identifies each row", "Sorts every column", "Encrypts the table", "Deletes duplicates automatically"], answer: 0, explanation: "A primary key uniquely identifies each record in a table." },
-      { id: "d3", prompt: "Which clause filters rows in a SQL query?", options: ["ORDER BY", "WHERE", "GROUP BY", "JOIN"], answer: 1, explanation: "WHERE filters rows based on a condition." }
-    ]
-  }
+// FEATURE 19 — PEER LEARNING CHALLENGES
+const peerChallengeCourses = [
+  "Python Programming",
+  "Java Programming",
+  "Web Development",
+  "Data Structures",
+  "Artificial Intelligence",
+  "Database Management"
 ];
+const peerChallengeLevels = ["Beginner", "Intermediate", "Advanced"];
 
 // Browser-based Python playground. Student code runs in a dedicated Web Worker.
 function PythonCodeEditor({ courseType = "python" }) {
@@ -1283,8 +1263,6 @@ function AssessmentCenter({ accountRole }) {
   async function createAssessment(event) {
     event.preventDefault();
     if (notes.trim().length < 20) { setError("Add at least 20 characters of source notes."); return; }
-    if (!Number.isInteger(Number(count)) || Number(count) < 1 || Number(count) > 500) { setError("Choose between 1 and 500 questions."); return; }
-    if (!Number.isInteger(Number(duration)) || Number(duration) < 1 || Number(duration) > 600) { setError("Choose a time limit between 1 and 600 minutes."); return; }
     try {
       setBusy(true); setError(""); setMessage("");
       const generated = await api("/assessments/generate", { method: "POST", body: JSON.stringify({ topic: title.trim() || course, notes: notes.trim(), question_count: Number(count), difficulty }) });
@@ -1334,28 +1312,18 @@ function AssessmentCenter({ accountRole }) {
     <div className="dashboard-section-heading"><div><span>FEATURE 16 · SECURE ASSESSMENTS</span><h2>Assessment Center</h2><p className="section-description">Faculty-published timed assessments with backend grading and protected answer keys.</p></div></div>
     {error && <div className="demo-result" role="alert"><p>{error}</p></div>}
     {message && <p className="demo-note" role="status">{message}</p>}
-    {staff && <form className="workspace-card" onSubmit={createAssessment} style={{padding:24, marginBottom:20, borderRadius:18, border:"1px solid #e6edf5", boxShadow:"0 8px 28px rgba(15,35,65,.05)"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:14,flexWrap:"wrap",marginBottom:20}}>
-        <div><span style={{color:"#16b8a9",fontSize:12,fontWeight:800,letterSpacing:1.3}}>FACULTY WORKSPACE</span><h3 style={{margin:"5px 0 6px",fontSize:23}}>Create a new assessment</h3><p className="demo-note" style={{margin:0}}>Build a timed assessment from your course study notes.</p></div>
-        <span style={{background:"#e9fbf8",color:"#087e70",padding:"8px 12px",borderRadius:10,fontSize:12,fontWeight:750}}>SECURE ASSESSMENT</span>
-      </div>
+    {staff && <form className="workspace-card" onSubmit={createAssessment} style={{padding:22, marginBottom:20}}>
+      <h3 style={{marginTop:0}}>Create assessment from study notes</h3>
       <div className="form-grid">
-        <label>Assessment title<input required value={title} onChange={e=>setTitle(e.target.value)} placeholder="e.g. Java Programming – Unit 1 Test" /></label>
+        <label>Assessment title<input value={title} onChange={e=>setTitle(e.target.value)} placeholder="e.g. Python Fundamentals Test" /></label>
         <label>Course<select value={course} onChange={e=>setCourse(e.target.value)}>{["Python Programming","Java Programming","Web Development","Data Structures","Artificial Intelligence","Database Management"].map(x=><option key={x}>{x}</option>)}</select></label>
-        <label style={{gridColumn:"1 / -1"}}>Difficulty level
-          <div role="group" aria-label="Difficulty level" style={{display:"flex",gap:9,flexWrap:"wrap",marginTop:8}}>
-            {["Beginner","Intermediate","Advanced"].map(level=><button key={level} type="button" aria-pressed={difficulty===level} onClick={()=>setDifficulty(level)} style={{border:`1px solid ${difficulty===level?"#0aa99b":"#dbe5ef"}`,background:difficulty===level?"#e8faf7":"#fff",color:difficulty===level?"#087e70":"#334155",borderRadius:10,padding:"10px 18px",fontWeight:750,cursor:"pointer"}}>{level}</button>)}
-          </div>
-        </label>
-        <label>Number of questions<input type="number" min="1" max="500" step="1" required value={count} onChange={e=>setCount(e.target.value)} /><small style={{display:"block",color:"#64748b",fontWeight:400,marginTop:5}}>Choose the number you need (up to 500 per assessment).</small></label>
-        <label>Time limit (minutes)<input type="number" min="1" max="600" required value={duration} onChange={e=>setDuration(e.target.value)} /></label>
+        <label>Difficulty<select value={difficulty} onChange={e=>setDifficulty(e.target.value)}><option>Beginner</option><option>Intermediate</option><option>Advanced</option></select></label>
+        <label>Questions<select value={count} onChange={e=>setCount(e.target.value)}><option value="3">3</option><option value="5">5</option><option value="10">10</option></select></label>
+        <label>Time limit (minutes)<input type="number" min="1" max="180" value={duration} onChange={e=>setDuration(e.target.value)} /></label>
       </div>
-      <label className="full-label" style={{display:"block",marginTop:18}}>Study notes<textarea rows="7" required value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Paste the lesson notes, definitions, examples and key concepts used to create the questions (at least 20 characters)." /></label>
-      <div style={{display:"flex",alignItems:"center",gap:9,flexWrap:"wrap",marginTop:16}}>
-        <button className="primary-action" type="submit" disabled={busy}>{busy ? "Generating questions…" : "✦ Generate assessment draft"}</button>
-        <span className="demo-note">Your draft is saved privately until you publish it.</span>
-      </div>
-      <p className="demo-note" style={{marginTop:12}}>Review generated questions before publishing. The maximum question count is subject to your backend generator and hosting resources.</p>
+      <label className="full-label">Study notes<textarea rows="5" value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Paste the source material used to generate assessment questions (at least 20 characters)." /></label>
+      <button className="primary-action" type="submit" disabled={busy}>{busy ? "Creating…" : "Generate assessment draft"}</button>
+      <p className="demo-note">Question generation currently uses your configured local rule-based FastAPI generator. Review the draft before publishing.</p>
     </form>}
 
     {active && <div className="workspace-card" style={{padding:22,marginBottom:20}}>
@@ -2384,11 +2352,12 @@ function DigitalLibraryNotesManager() {
   const [editingId, setEditingId] = useState("");
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewItem, setPreviewItem] = useState(null);
+  const [activeTab, setActiveTab] = useState("note");
 
-  const panel = { background: "#fff", border: "1px solid #dce6ef", borderRadius: 14, padding: 18 };
-  const field = { boxSizing: "border-box", width: "100%", padding: 11, border: "1px solid #cbd8e5", borderRadius: 9, fontFamily: "inherit", fontSize: 14, color: "#18334f", background: "#fff" };
-  const primary = { border: 0, borderRadius: 9, padding: "11px 16px", background: "#139b91", color: "white", fontWeight: 700, cursor: "pointer" };
-  const secondary = { border: "1px solid #cbd8e5", borderRadius: 9, padding: "10px 14px", background: "#fff", color: "#24425d", fontWeight: 600, cursor: "pointer" };
+  const panel = { background: "#fff", border: "1px solid #e2eaf2", borderRadius: 18, padding: 20, boxShadow: "0 8px 24px rgba(15,35,65,.045)" };
+  const field = { boxSizing: "border-box", width: "100%", padding: "12px 14px", border: "1px solid #d8e4ef", borderRadius: 11, fontFamily: "inherit", fontSize: 14, color: "#18334f", background: "#fff", outlineColor: "#139b91" };
+  const primary = { border: 0, borderRadius: 11, padding: "12px 17px", background: "#079f94", color: "white", fontWeight: 750, cursor: "pointer" };
+  const secondary = { border: "1px solid #d7e2ed", borderRadius: 10, padding: "9px 12px", background: "#fff", color: "#24425d", fontWeight: 650, cursor: "pointer" };
 
   const loadItems = async (user) => {
     if (!user) { setItems([]); setLoading(false); return; }
@@ -2425,7 +2394,7 @@ function DigitalLibraryNotesManager() {
     finally { setBusy(false); }
   };
 
-  const editNote = (item) => { setEditingId(item.id); setTitle(item.title || ""); setSubject(item.subject || "General"); setNoteBody(item.content || ""); setMessage("Editing note: " + (item.title || "Untitled")); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const editNote = (item) => { setEditingId(item.id); setTitle(item.title || ""); setSubject(item.subject || "General"); setNoteBody(item.content || ""); setActiveTab("note"); setMessage("Editing note: " + (item.title || "Untitled")); window.scrollTo({ top: 0, behavior: "smooth" }); };
 
   const uploadFile = async () => {
     const user = auth.currentUser;
@@ -2455,7 +2424,7 @@ function DigitalLibraryNotesManager() {
     const user = auth.currentUser; if (!user) return;
     try {
       await updateDoc(doc(db, "users", user.uid, "digitalLibrary", item.id), { [key]: !item[key], updatedAt: serverTimestamp() });
-      setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, [key]: !entry[key] } : entry));
+      setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, [key]: !item[key] } : entry));
     } catch (error) { console.error("Library update error:", error); setMessage("Could not update this item. Check Firestore permissions."); }
   };
 
@@ -2487,43 +2456,59 @@ function DigitalLibraryNotesManager() {
 
   return (
     <section className="dashboard-section" id="digital-library">
-      <div className="dashboard-section-heading"><div><span>FEATURE 24 · YOUR LEARNING SPACE</span><h2>📚 Digital Library & Notes Manager</h2><p className="section-description">Keep study files, personal notes and important learning resources organised in one place.</p></div></div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(145px,1fr))", gap: 12, marginTop: 18 }}>
-        {[{ label: "Library items", value: items.length, icon: "📚" }, { label: "Personal notes", value: items.filter((item) => item.type === "note").length, icon: "📝" }, { label: "Uploaded files", value: items.filter((item) => item.type === "file").length, icon: "📎" }, { label: "Pinned items", value: items.filter((item) => item.pinned).length, icon: "📌" }].map((stat) => <div key={stat.label} style={{ ...panel, padding: 15 }}><div style={{ fontSize: 22 }}>{stat.icon}</div><strong style={{ display: "block", fontSize: 25, color: "#18334f", marginTop: 5 }}>{stat.value}</strong><span style={{ color: "#64748b", fontSize: 13 }}>{stat.label}</span></div>)}
+      <style>{`
+        #digital-library .dl-stat { background:#fff;border:1px solid #e4ebf3;border-radius:16px;padding:17px;display:flex;gap:13px;align-items:center;min-width:0; }
+        #digital-library .dl-stat-icon { width:44px;height:44px;border-radius:13px;background:#e9f8f6;display:grid;place-items:center;font-size:22px;flex-shrink:0; }
+        #digital-library .dl-tab { border:1px solid #dce6ef;background:#fff;color:#40546b;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer; }
+        #digital-library .dl-tab.active { color:#078f85;border-color:#0aa89c;background:#edfbf9; }
+        #digital-library .dl-card { border:1px solid #e1eaf2;border-radius:14px;padding:15px;background:#fff;min-width:0;transition:box-shadow .18s ease,transform .18s ease; }
+        #digital-library .dl-card:hover { box-shadow:0 10px 24px rgba(20,45,75,.08);transform:translateY(-2px); }
+        @media(max-width:720px){#digital-library .dl-editor-grid{grid-template-columns:1fr!important;}#digital-library .dl-stats{grid-template-columns:repeat(2,minmax(0,1fr))!important;}}
+      `}</style>
+      <div className="dashboard-section-heading">
+        <div><span>FEATURE 24 · YOUR LEARNING SPACE</span><h2>📚 Digital Library & Notes Manager</h2><p className="section-description">Your personal study space. Save notes, organize resources and find everything you need to learn.</p></div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,340px),1fr))", gap: 16, marginTop: 18 }}>
+      <div className="dl-stats" style={{ display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:13,marginTop:20 }}>
+        {[{label:"Library items",value:items.length,icon:"📚"},{label:"Personal notes",value:items.filter((item)=>item.type==="note").length,icon:"📝"},{label:"Uploaded files",value:items.filter((item)=>item.type==="file").length,icon:"📎"},{label:"Pinned items",value:items.filter((item)=>item.pinned).length,icon:"📌"}].map((stat)=><div className="dl-stat" key={stat.label}><div className="dl-stat-icon">{stat.icon}</div><div><strong style={{display:"block",fontSize:25,color:"#18334f",lineHeight:1.2}}>{stat.value}</strong><span style={{color:"#718096",fontSize:13}}>{stat.label}</span></div></div>)}
+      </div>
+
+      <div className="dl-editor-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1.05fr) minmax(0,.95fr)",gap:18,marginTop:20,alignItems:"start"}}>
         <div style={panel}>
-          <h3 style={{ marginTop: 0, color: "#18334f" }}>{editingId ? "Edit study note" : "Create a study note"}</h3>
-          <label style={{ display: "block", color: "#334155", fontWeight: 700, marginBottom: 6 }}>Note title</label>
-          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Introduction to Artificial Intelligence" style={{ ...field, marginBottom: 11 }} />
-          <label style={{ display: "block", color: "#334155", fontWeight: 700, marginBottom: 6 }}>Subject / course</label>
-          <input value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="e.g. Computer Science" style={{ ...field, marginBottom: 11 }} />
-          <label style={{ display: "block", color: "#334155", fontWeight: 700, marginBottom: 6 }}>Note content</label>
-          <textarea rows={8} value={noteBody} onChange={(event) => setNoteBody(event.target.value)} placeholder="Write definitions, explanations, examples and revision points..." style={{ ...field, resize: "vertical", lineHeight: 1.6 }} />
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}><button type="button" style={primary} disabled={busy} onClick={saveNote}>{busy ? "Saving..." : editingId ? "Update note" : "Save note"}</button>{editingId && <button type="button" style={secondary} onClick={resetNote}>Cancel edit</button>}</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}><div><h3 style={{margin:0,color:"#18334f",fontSize:20}}>{editingId?"Edit your study note":"Create something to study"}</h3><p className="demo-note" style={{margin:"5px 0 0"}}>Capture important ideas and keep them organized.</p></div><span style={{fontSize:12,fontWeight:800,color:"#078f85",background:"#e9f8f6",padding:"6px 10px",borderRadius:20}}>MY WORKSPACE</span></div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",margin:"18px 0"}}><button type="button" className={`dl-tab ${activeTab==="note"?"active":""}`} onClick={()=>setActiveTab("note")}>📝 Text note</button><button type="button" className={`dl-tab ${activeTab==="upload"?"active":""}`} onClick={()=>setActiveTab("upload")}>☁️ Upload file</button></div>
+          {activeTab==="note"?<div>
+            <label style={{display:"block",color:"#334155",fontWeight:750,marginBottom:7}}>Note title</label><input value={title} onChange={(event)=>setTitle(event.target.value)} placeholder="e.g. Introduction to Artificial Intelligence" style={{...field,marginBottom:13}} />
+            <label style={{display:"block",color:"#334155",fontWeight:750,marginBottom:7}}>Subject / course</label><input value={subject} onChange={(event)=>setSubject(event.target.value)} placeholder="e.g. Computer Science" style={{...field,marginBottom:13}} />
+            <label style={{display:"block",color:"#334155",fontWeight:750,marginBottom:7}}>Your notes</label><textarea rows={9} value={noteBody} onChange={(event)=>setNoteBody(event.target.value)} placeholder="Write definitions, explanations, examples and revision points..." style={{...field,resize:"vertical",lineHeight:1.65,minHeight:190}} />
+            <div style={{display:"flex",gap:9,flexWrap:"wrap",marginTop:14}}><button type="button" style={primary} disabled={busy} onClick={saveNote}>{busy?"Saving...":editingId?"✓ Update note":"＋ Save note"}</button>{editingId&&<button type="button" style={secondary} onClick={resetNote}>Cancel edit</button>}</div>
+          </div>:<div>
+            <p className="demo-note" style={{marginTop:0}}>Upload PDFs, Word documents, presentations, spreadsheets, images and other study files. Maximum file size: 20 MB.</p>
+            <label style={{display:"block",color:"#334155",fontWeight:750,marginBottom:7}}>Subject / course</label><input value={subject} onChange={(event)=>setSubject(event.target.value)} placeholder="e.g. Computer Science" style={{...field,marginBottom:14}} />
+            <label htmlFor="digital-library-file-input" style={{display:"block",border:"2px dashed #b9cbd9",borderRadius:14,padding:"30px 18px",textAlign:"center",color:"#36516b",cursor:"pointer",background:"#f8fbfd"}}><div style={{fontSize:34,marginBottom:8}}>📂</div><strong style={{fontSize:16}}>Choose a file to upload</strong><div className="demo-note">Browse your device · Up to 20 MB</div><input id="digital-library-file-input" type="file" onChange={(event)=>setSelectedFile(event.target.files?.[0]||null)} style={{display:"none"}} /></label>
+            {selectedFile&&<div style={{marginTop:12,padding:12,background:"#f0faf8",borderRadius:10,color:"#31566a"}}>Selected: <strong>{selectedFile.name}</strong> · {readableSize(selectedFile.size)}</div>}
+            <button type="button" style={{...primary,marginTop:14}} disabled={busy||!selectedFile} onClick={uploadFile}>{busy?"Uploading...":"↑ Upload to my library"}</button>
+          </div>}
         </div>
-        <div style={panel}>
-          <h3 style={{ marginTop: 0, color: "#18334f" }}>Upload study material</h3>
-          <p className="demo-note">Add PDFs, Word documents, presentations, spreadsheets, images and other study files. Maximum file size: 20 MB.</p>
-          <label style={{ display: "block", color: "#334155", fontWeight: 700, marginBottom: 6 }}>Subject / course</label>
-          <input value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="e.g. Computer Science" style={{ ...field, marginBottom: 12 }} />
-          <label htmlFor="digital-library-file-input" style={{ display: "block", border: "2px dashed #b9cbd9", borderRadius: 12, padding: 24, textAlign: "center", color: "#36516b", cursor: "pointer", background: "#f8fbfd" }}><div style={{ fontSize: 32 }}>☁️</div><strong>Choose a file to upload</strong><div className="demo-note">Click here to browse your device</div><input id="digital-library-file-input" type="file" onChange={(event) => setSelectedFile(event.target.files?.[0] || null)} style={{ display: "none" }} /></label>
-          {selectedFile && <p className="demo-note" style={{ marginTop: 10 }}>Selected: <strong>{selectedFile.name}</strong> · {readableSize(selectedFile.size)}</p>}
-          <button type="button" style={{ ...primary, marginTop: 12 }} disabled={busy || !selectedFile} onClick={uploadFile}>{busy ? "Working..." : "Upload to my library"}</button>
-          <p className="demo-note" style={{ marginTop: 12 }}>Files are stored in your Firebase Storage account area. Uploading requires Firebase Storage rules that allow the signed-in user to access their own folder.</p>
+
+        <div style={{...panel,minHeight:330}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}><div><h3 style={{margin:0,color:"#18334f",fontSize:20}}>Quick organization</h3><p className="demo-note" style={{margin:"5px 0 0"}}>Find saved materials faster.</p></div><span style={{fontSize:26}}>🗂️</span></div>
+          <div style={{marginTop:20,display:"grid",gap:11}}>
+            {[{label:"All resources",count:items.length,filter:"all",icon:"📚"},{label:"Personal notes",count:items.filter((x)=>x.type==="note").length,filter:"notes",icon:"📝"},{label:"Uploaded files",count:items.filter((x)=>x.type==="file").length,filter:"files",icon:"📎"},{label:"Pinned resources",count:items.filter((x)=>x.pinned).length,filter:"all",icon:"📌"}].map((entry)=><button key={entry.label} type="button" onClick={()=>{setFilter(entry.filter);if(entry.label==="Pinned resources")setSearch("");}} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"13px 14px",border:"1px solid #e4ebf2",borderRadius:12,background:filter===entry.filter?"#f1fbfa":"#fff",cursor:"pointer",textAlign:"left"}}><span style={{display:"flex",alignItems:"center",gap:10,color:"#334b63",fontWeight:700}}><span style={{fontSize:19}}>{entry.icon}</span>{entry.label}</span><strong style={{color:"#078f85"}}>{entry.count}</strong></button>)}
+          </div>
+          <div style={{marginTop:18,padding:14,background:"#f5f9fc",borderRadius:12}}><strong style={{color:"#18334f"}}>Study tip</strong><p className="demo-note" style={{margin:"5px 0 0"}}>Use clear titles and subject names. Pin important revision notes so they stay at the top of your library.</p></div>
         </div>
       </div>
 
-      <div style={{ ...panel, marginTop: 18 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}><div><h3 style={{ color: "#18334f", margin: 0 }}>My study library ({visibleItems.length})</h3><p className="demo-note">Search, filter, pin, favourite, preview and manage your saved resources.</p></div><input aria-label="Search library" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search notes and files..." style={{ ...field, maxWidth: 300 }} /></div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "12px 0 16px" }}><select aria-label="Filter library type" value={filter} onChange={(event) => setFilter(event.target.value)} style={{ ...field, width: "auto", minWidth: 145 }}><option value="all">All items</option><option value="notes">Notes only</option><option value="files">Files only</option></select><select aria-label="Filter by subject" value={subjectFilter} onChange={(event) => setSubjectFilter(event.target.value)} style={{ ...field, width: "auto", minWidth: 160 }}><option value="all">All subjects</option>{subjects.map((name) => <option key={name} value={name}>{name}</option>)}</select></div>
-        {loading ? <p className="demo-note">Loading your library...</p> : visibleItems.length === 0 ? <div style={{ textAlign: "center", padding: 28, background: "#f8fbfd", borderRadius: 11 }}><div style={{ fontSize: 34 }}>📂</div><h3 style={{ color: "#18334f" }}>Your library is ready</h3><p className="demo-note">Create your first note or upload a study file to get started.</p></div> : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,260px),1fr))", gap: 12 }}>{visibleItems.map((item) => <article key={item.id} style={{ border: "1px solid #dce6ef", borderRadius: 12, padding: 14, background: "#fff", minWidth: 0 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "start" }}><span style={{ fontSize: 24 }}>{item.type === "note" ? "📝" : item.contentType === "application/pdf" ? "📕" : item.contentType?.startsWith("image/") ? "🖼️" : "📎"}</span><div style={{ display: "flex", gap: 5 }}><button type="button" aria-label={item.pinned ? "Unpin item" : "Pin item"} title={item.pinned ? "Unpin" : "Pin"} onClick={() => toggleFlag(item, "pinned")} style={{ ...secondary, padding: "5px 8px" }}>{item.pinned ? "📌" : "＋📌"}</button><button type="button" aria-label={item.favorite ? "Remove favourite" : "Add favourite"} title="Favourite" onClick={() => toggleFlag(item, "favorite")} style={{ ...secondary, padding: "5px 8px" }}>{item.favorite ? "★" : "☆"}</button></div></div><h4 style={{ color: "#18334f", margin: "10px 0 5px", overflowWrap: "anywhere" }}>{item.title || item.fileName || "Untitled"}</h4><div style={{ color: "#0b8d83", fontSize: 12, fontWeight: 700 }}>{item.subject || "General"} · {item.type === "note" ? "NOTE" : "FILE"}</div>{item.type === "note" ? <p style={{ color: "#64748b", fontSize: 13, lineHeight: 1.5, whiteSpace: "pre-wrap", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" }}>{item.content}</p> : <p className="demo-note">{item.fileName} · {readableSize(item.size)}</p>}<div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 12 }}>{item.type === "note" ? <button type="button" style={secondary} onClick={() => editNote(item)}>Edit note</button> : <><button type="button" style={secondary} onClick={() => setPreviewItem(item)} disabled={!isPreviewable(item)}>Preview</button><a href={item.downloadUrl} target="_blank" rel="noreferrer" style={{ ...secondary, textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Open / Download</a></>}<button type="button" style={{ ...secondary, color: "#a33b3b" }} disabled={busy} onClick={() => deleteItem(item)}>Delete</button></div></article>)}</div>}
+      <div style={{...panel,marginTop:20}}>
+        <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center",flexWrap:"wrap"}}><div><h3 style={{color:"#18334f",margin:0,fontSize:20}}>My study library <span style={{color:"#078f85"}}>({visibleItems.length})</span></h3><p className="demo-note" style={{margin:"5px 0 0"}}>Your saved notes and learning resources.</p></div><input aria-label="Search library" value={search} onChange={(event)=>setSearch(event.target.value)} placeholder="⌕  Search notes and files..." style={{...field,maxWidth:320}} /></div>
+        <div style={{display:"flex",gap:9,flexWrap:"wrap",margin:"15px 0 18px"}}><select aria-label="Filter library type" value={filter} onChange={(event)=>setFilter(event.target.value)} style={{...field,width:"auto",minWidth:145}}><option value="all">All items</option><option value="notes">Notes only</option><option value="files">Files only</option></select><select aria-label="Filter by subject" value={subjectFilter} onChange={(event)=>setSubjectFilter(event.target.value)} style={{...field,width:"auto",minWidth:170}}><option value="all">All subjects</option>{subjects.map((name)=><option key={name} value={name}>{name}</option>)}</select><button type="button" style={secondary} onClick={()=>{setSearch("");setFilter("all");setSubjectFilter("all");}}>Clear filters</button></div>
+        {loading?<p className="demo-note">Loading your library...</p>:visibleItems.length===0?<div style={{textAlign:"center",padding:34,background:"#f8fbfd",borderRadius:13}}><div style={{fontSize:38}}>📂</div><h3 style={{color:"#18334f",marginBottom:5}}>Your library is ready</h3><p className="demo-note">Create your first note or upload a study file to get started.</p></div>:<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,250px),1fr))",gap:13}}>{visibleItems.map((item)=><article className="dl-card" key={item.id}><div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"start"}}><span style={{fontSize:25}}>{item.type==="note"?"📝":item.contentType==="application/pdf"?"📕":item.contentType?.startsWith("image/")?"🖼️":"📎"}</span><div style={{display:"flex",gap:5}}><button type="button" aria-label={item.pinned?"Unpin item":"Pin item"} title={item.pinned?"Unpin":"Pin"} onClick={()=>toggleFlag(item,"pinned")} style={{...secondary,padding:"6px 8px"}}>{item.pinned?"📌":"＋📌"}</button><button type="button" aria-label={item.favorite?"Remove favourite":"Add favourite"} title="Favourite" onClick={()=>toggleFlag(item,"favorite")} style={{...secondary,padding:"6px 8px"}}>{item.favorite?"★":"☆"}</button></div></div><h4 style={{color:"#18334f",margin:"11px 0 5px",overflowWrap:"anywhere"}}>{item.title||item.fileName||"Untitled"}</h4><div style={{color:"#078f85",fontSize:12,fontWeight:800}}>{item.subject||"General"} · {item.type==="note"?"NOTE":"FILE"}{item.pinned?" · PINNED":""}</div>{item.type==="note"?<p style={{color:"#718096",fontSize:13,lineHeight:1.55,whiteSpace:"pre-wrap",overflow:"hidden",display:"-webkit-box",WebkitLineClamp:3,WebkitBoxOrient:"vertical"}}>{item.content}</p>:<p className="demo-note">{item.fileName} · {readableSize(item.size)}</p>}<div style={{display:"flex",gap:7,flexWrap:"wrap",marginTop:12}}>{item.type==="note"?<button type="button" style={secondary} onClick={()=>editNote(item)}>Edit note</button>:<><button type="button" style={secondary} onClick={()=>setPreviewItem(item)} disabled={!isPreviewable(item)}>Preview</button><a href={item.downloadUrl} target="_blank" rel="noreferrer" style={{...secondary,textDecoration:"none",display:"inline-flex",alignItems:"center"}}>Open / Download</a></>}<button type="button" style={{...secondary,color:"#a33b3b"}} disabled={busy} onClick={()=>deleteItem(item)}>Delete</button></div></article>)}</div>}
       </div>
 
-      {previewItem && <div role="dialog" aria-modal="true" aria-label="Study material preview" style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(10,25,45,.72)", display: "grid", placeItems: "center", padding: 18 }} onClick={() => setPreviewItem(null)}><div onClick={(event) => event.stopPropagation()} style={{ background: "#fff", borderRadius: 14, padding: 14, width: "min(100%,1000px)", height: "min(88vh,760px)", display: "flex", flexDirection: "column", gap: 10 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}><strong style={{ color: "#18334f", overflowWrap: "anywhere" }}>{previewItem.title}</strong><button type="button" style={secondary} onClick={() => setPreviewItem(null)}>Close preview ✕</button></div>{previewItem.contentType?.startsWith("image/") ? <img src={previewItem.downloadUrl} alt={previewItem.title} style={{ maxWidth: "100%", maxHeight: "calc(88vh - 90px)", objectFit: "contain", margin: "auto" }} /> : <iframe title={`Preview ${previewItem.title}`} src={previewItem.downloadUrl} style={{ width: "100%", flex: 1, border: "1px solid #dce6ef", borderRadius: 8 }} />}</div></div>}
-      {message && <p role="status" className="demo-note" style={{ marginTop: 12, padding: 11, borderRadius: 9, background: "#eef7f6" }}>{message}</p>}
-      <p className="demo-note" style={{ marginTop: 12 }}>Your notes and file records are stored in Firestore at <code>users/&#123;uid&#125;/digitalLibrary</code>; uploaded files use the Firebase Storage path <code>users/&#123;uid&#125;/digitalLibrary/...</code>. Word and presentation files can be downloaded; in-browser preview is provided for PDFs and images.</p>
+      {previewItem&&<div role="dialog" aria-modal="true" aria-label="Study material preview" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(10,25,45,.72)",display:"grid",placeItems:"center",padding:18}} onClick={()=>setPreviewItem(null)}><div onClick={(event)=>event.stopPropagation()} style={{background:"#fff",borderRadius:14,padding:14,width:"min(100%,1000px)",height:"min(88vh,760px)",display:"flex",flexDirection:"column",gap:10}}><div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"center"}}><strong style={{color:"#18334f",overflowWrap:"anywhere"}}>{previewItem.title}</strong><button type="button" style={secondary} onClick={()=>setPreviewItem(null)}>Close preview ✕</button></div>{previewItem.contentType?.startsWith("image/")?<img src={previewItem.downloadUrl} alt={previewItem.title} style={{maxWidth:"100%",maxHeight:"calc(88vh - 90px)",objectFit:"contain",margin:"auto"}}/>:<iframe title={`Preview ${previewItem.title}`} src={previewItem.downloadUrl} style={{width:"100%",flex:1,border:"1px solid #dce6ef",borderRadius:8}}/>}</div></div>}
+      {message&&<p role="status" className="demo-note" style={{marginTop:12,padding:11,borderRadius:9,background:"#eef7f6"}}>{message}</p>}
+      <p className="demo-note" style={{marginTop:12}}>Your notes and file records are stored in Firestore at <code>users/&#123;uid&#125;/digitalLibrary</code>; uploaded files use Firebase Storage at <code>users/&#123;uid&#125;/digitalLibrary/...</code>. Word and presentation files can be downloaded; in-browser preview is provided for PDFs and images.</p>
     </section>
   );
 }
@@ -3076,28 +3061,6 @@ function Dashboard({ onBack }) {
   const [courseNotesLevelFilter, setCourseNotesLevelFilter] = useState("all");
   const [selectedLesson, setSelectedLesson] = useState(null);
   const [selectedTopic, setSelectedTopic] = useState(null);
-
-  // Bring each newly opened learning panel into view so students can see it immediately.
-  useEffect(() => {
-    if (!selectedCourse) return;
-    requestAnimationFrame(() => {
-      document.getElementById("course-details-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-  }, [selectedCourse]);
-
-  useEffect(() => {
-    if (!selectedLesson) return;
-    requestAnimationFrame(() => {
-      document.getElementById("selected-lesson-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-  }, [selectedLesson]);
-
-  useEffect(() => {
-    if (!selectedTopic) return;
-    requestAnimationFrame(() => {
-      document.getElementById("topic-learning-content")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-  }, [selectedTopic]);
   const [completedLessons, setCompletedLessons] = useState({});
   const [certificates, setCertificates] = useState([]);
   const [certificateMessage, setCertificateMessage] = useState("");
@@ -3177,6 +3140,8 @@ function Dashboard({ onBack }) {
   const [editingAssignmentId, setEditingAssignmentId] = useState(null);
   const [assignmentMessage, setAssignmentMessage] = useState("");
   const [assignmentError, setAssignmentError] = useState("");
+  const [assignmentCourseFilter, setAssignmentCourseFilter] = useState("All Courses");
+  const [viewingAssignment, setViewingAssignment] = useState(null);
   const [submissionDrafts, setSubmissionDrafts] = useState({});
   const [submissionFiles, setSubmissionFiles] = useState({});
   const [submissionSavingId, setSubmissionSavingId] = useState(null);
@@ -3487,16 +3452,25 @@ function Dashboard({ onBack }) {
     if (selectedStudyGroup) loadStudyGroupMessages(selectedStudyGroup);
   }, [selectedStudyGroup?.id]);
 
-  // FEATURE 19 — PEER LEARNING CHALLENGES
-  const [selectedPeerChallengeId, setSelectedPeerChallengeId] = useState(peerLearningChallenges[0].id);
-  const [peerChallengeAnswers, setPeerChallengeAnswers] = useState({});
+  // FEATURE 19 — UNLIMITED PEER LEARNING CHALLENGES
+  const [peerCourse, setPeerCourse] = useState(peerChallengeCourses[0]);
+  const [peerLevel, setPeerLevel] = useState("Beginner");
+  const [peerCurrentQuestion, setPeerCurrentQuestion] = useState(null);
+  const [peerSelectedAnswer, setPeerSelectedAnswer] = useState(null);
+  const [peerQuestionAnswered, setPeerQuestionAnswered] = useState(false);
+  const [peerQuestionNumber, setPeerQuestionNumber] = useState(0);
+  const [peerCorrectCount, setPeerCorrectCount] = useState(0);
+  const [peerSessionActive, setPeerSessionActive] = useState(false);
+  const [peerSeenQuestions, setPeerSeenQuestions] = useState([]);
   const [peerChallengeSubmissions, setPeerChallengeSubmissions] = useState([]);
   const [peerChallengeLoading, setPeerChallengeLoading] = useState(true);
   const [peerChallengeSaving, setPeerChallengeSaving] = useState(false);
+  const [peerQuestionLoading, setPeerQuestionLoading] = useState(false);
   const [peerChallengeError, setPeerChallengeError] = useState("");
   const [peerChallengeMessage, setPeerChallengeMessage] = useState("");
-  const [peerChallengeResult, setPeerChallengeResult] = useState(null);
-  const selectedPeerChallenge = peerLearningChallenges.find((item) => item.id === selectedPeerChallengeId) || peerLearningChallenges[0];
+
+  const peerChallengeId = `${peerCourse.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${peerLevel.toLowerCase()}`;
+  const peerChallengeTitle = `${peerCourse} · ${peerLevel}`;
 
   async function loadPeerChallengeSubmissions() {
     try {
@@ -3512,46 +3486,120 @@ function Dashboard({ onBack }) {
     } finally { setPeerChallengeLoading(false); }
   }
 
-  async function submitPeerChallenge(event) {
-    event.preventDefault();
+  async function requestPeerQuestion() {
     const user = auth.currentUser;
-    if (!user) { setPeerChallengeError("Please sign in to submit a challenge."); return; }
-    const questions = selectedPeerChallenge.questions;
-    if (questions.some((question) => peerChallengeAnswers[question.id] === undefined)) {
-      setPeerChallengeError("Please answer every question before submitting."); return;
+    if (!user) {
+      setPeerChallengeError("Please sign in to start a challenge.");
+      return;
     }
-    const correctCount = questions.filter((question) => Number(peerChallengeAnswers[question.id]) === question.answer).length;
-    const score = Math.round((correctCount / questions.length) * selectedPeerChallenge.points);
     try {
-      setPeerChallengeSaving(true); setPeerChallengeError(""); setPeerChallengeMessage("");
+      setPeerQuestionLoading(true);
+      setPeerChallengeError("");
+      const token = await user.getIdToken();
+      const response = await fetch(`${API_URL}/peer-challenge-question`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          course: peerCourse,
+          difficulty: peerLevel,
+          previous_questions: peerSeenQuestions.slice(-30)
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not generate a question. Please try again.");
+      if (!data.question || !Array.isArray(data.options) || data.options.length !== 4 || !Number.isInteger(data.answer) || data.answer < 0 || data.answer > 3) {
+        throw new Error("The question service returned an invalid question. Please try again.");
+      }
+      const normalized = { ...data, id: `${Date.now()}-${Math.random().toString(36).slice(2)}` };
+      setPeerCurrentQuestion(normalized);
+      setPeerSeenQuestions((items) => [...items, normalized.question].slice(-60));
+      setPeerSelectedAnswer(null);
+      setPeerQuestionAnswered(false);
+      setPeerQuestionNumber((count) => count + 1);
+      setPeerSessionActive(true);
+    } catch (err) {
+      console.error("Peer question generation error:", err);
+      setPeerChallengeError(err.message || "Could not generate the next question.");
+    } finally {
+      setPeerQuestionLoading(false);
+    }
+  }
+
+  function startPeerChallenge() {
+    setPeerCurrentQuestion(null);
+    setPeerSelectedAnswer(null);
+    setPeerQuestionAnswered(false);
+    setPeerQuestionNumber(0);
+    setPeerCorrectCount(0);
+    setPeerSeenQuestions([]);
+    setPeerChallengeMessage("");
+    setPeerChallengeError("");
+    setPeerSessionActive(true);
+    // The first request starts the question counter at one.
+    requestPeerQuestion();
+  }
+
+  function answerPeerQuestion(optionIndex) {
+    if (peerQuestionAnswered || !peerCurrentQuestion) return;
+    setPeerSelectedAnswer(optionIndex);
+    setPeerQuestionAnswered(true);
+    if (optionIndex === peerCurrentQuestion.answer) setPeerCorrectCount((count) => count + 1);
+  }
+
+  async function finishPeerChallenge() {
+    const user = auth.currentUser;
+    if (!user) { setPeerChallengeError("Please sign in to save your score."); return; }
+    if (peerQuestionNumber < 1) {
+      setPeerSessionActive(false);
+      setPeerChallengeMessage("Challenge ended. Answer at least one question to save a score.");
+      return;
+    }
+    if (!peerQuestionAnswered) {
+      setPeerChallengeError("Please answer the current question before finishing.");
+      return;
+    }
+    try {
+      setPeerChallengeSaving(true);
+      setPeerChallengeError("");
       const payload = {
         studentId: user.uid,
         studentName: profile.name || user.displayName || user.email || "Student",
-        challengeId: selectedPeerChallenge.id,
-        challengeTitle: selectedPeerChallenge.title,
-        course: selectedPeerChallenge.course,
-        score,
-        totalPoints: selectedPeerChallenge.points,
-        correctCount,
-        questionCount: questions.length,
+        challengeId: peerChallengeId,
+        challengeTitle: peerChallengeTitle,
+        course: peerCourse,
+        level: peerLevel,
+        score: peerCorrectCount,
+        totalPoints: peerQuestionNumber,
+        correctCount: peerCorrectCount,
+        questionCount: peerQuestionNumber,
         createdAt: serverTimestamp()
       };
       const saved = await addDoc(collection(db, "challengeSubmissions"), payload);
       setPeerChallengeSubmissions((items) => [{ ...payload, id: saved.id, createdAt: new Date() }, ...items]);
-      setPeerChallengeResult({ score, totalPoints: selectedPeerChallenge.points, correctCount, questionCount: questions.length });
-      setPeerChallengeMessage("Your score has been saved. Great work!");
+      setPeerSessionActive(false);
+      setPeerChallengeMessage(`Challenge saved! You scored ${peerCorrectCount} out of ${peerQuestionNumber}.`);
+      setPeerCurrentQuestion(null);
     } catch (err) {
       console.error("Peer challenge submission error:", err);
       setPeerChallengeError("Could not save your score. Check the Challenge Submissions Firestore rules.");
     } finally { setPeerChallengeSaving(false); }
   }
 
-  function choosePeerChallenge(challengeId) {
-    setSelectedPeerChallengeId(challengeId);
-    setPeerChallengeAnswers({});
-    setPeerChallengeResult(null);
-    setPeerChallengeMessage("");
+  function changePeerCourseOrLevel(kind, value) {
+    if (peerSessionActive && peerQuestionNumber > 0) {
+      setPeerChallengeError("Finish your current challenge before changing the course or level.");
+      return;
+    }
+    if (kind === "course") setPeerCourse(value);
+    else setPeerLevel(value);
+    setPeerCurrentQuestion(null);
+    setPeerSelectedAnswer(null);
+    setPeerQuestionAnswered(false);
     setPeerChallengeError("");
+    setPeerChallengeMessage("");
   }
 
   const peerLeaderboard = Object.values(peerChallengeSubmissions.reduce((best, item) => {
@@ -3713,6 +3761,7 @@ function Dashboard({ onBack }) {
   const [feedbackCourse, setFeedbackCourse] = useState("Python Programming");
   const [feedbackRating, setFeedbackRating] = useState("5");
   const [feedbackComment, setFeedbackComment] = useState("");
+  const [feedbackFormOpen, setFeedbackFormOpen] = useState(false);
   const [facultyResources, setFacultyResources] = useState([]);
   const [facultyLoading, setFacultyLoading] = useState(false);
   const [facultySaving, setFacultySaving] = useState(false);
@@ -3919,13 +3968,10 @@ function Dashboard({ onBack }) {
       if (!user) { setCourseFeedback([]); return; }
       try {
         setFeedbackLoading(true);
-        // Firestore rules do not filter query results. Students must query only
-        // documents whose studentId matches their authenticated Firebase UID.
+        // All signed-in users can read feedback under the current courseFeedback
+        // Firestore rule. Load all reviews so every student sees real course averages.
         const feedbackRef = collection(db, "courseFeedback");
-        const feedbackQuery = ["faculty", "admin"].includes(accountRole)
-          ? query(feedbackRef)
-          : query(feedbackRef, where("studentId", "==", user.uid));
-        const snapshot = await getDocs(feedbackQuery);
+        const snapshot = await getDocs(query(feedbackRef));
         const records = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
         records.sort((a, b) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
         setCourseFeedback(records);
@@ -3963,6 +4009,7 @@ function Dashboard({ onBack }) {
       setCourseFeedback((items) => [{ ...existing, ...payload, id: feedbackId, updatedAt: new Date() }, ...items.filter((item) => item.id !== feedbackId)]);
       setFeedbackMessage(existing ? "Your feedback was updated successfully." : "Thank you! Your course feedback was submitted.");
       setFeedbackComment("");
+      setFeedbackFormOpen(false);
     } catch (err) {
       console.error("Course feedback save error:", err);
       setFeedbackError("Could not save feedback. Check the Course Feedback Firestore rules and try again.");
@@ -3975,7 +4022,8 @@ function Dashboard({ onBack }) {
     setFeedbackComment(item.comment || "");
     setFeedbackMessage("You are editing your previous feedback. Submit to save your changes.");
     setFeedbackError("");
-    document.getElementById("course-feedback")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setFeedbackFormOpen(true);
+    setTimeout(() => document.getElementById("feedback-form")?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
   }
 
   async function deleteCourseFeedback(item) {
@@ -6268,7 +6316,7 @@ function Dashboard({ onBack }) {
 
           {/* COURSE DETAILS AND LESSONS */}
           {selectedCourse && (
-            <div id="course-details-panel" className="workspace-card course-details-panel">
+            <div className="workspace-card course-details-panel">
               <button
                 type="button"
                 className="secondary-action"
@@ -6479,7 +6527,7 @@ function Dashboard({ onBack }) {
 
                 {/* SELECTED LESSON */}
                 {selectedLesson && (
-                  <div id="selected-lesson-panel" className="selected-lesson-panel">
+                  <div className="selected-lesson-panel">
                     <button
                       type="button"
                       className="secondary-action"
@@ -6524,7 +6572,7 @@ function Dashboard({ onBack }) {
                     </div>
 
                     {selectedTopic && (
-                      <div id="topic-learning-content" className="topic-learning-content">
+                      <div className="topic-learning-content">
                         {(() => {
                           const title = selectedTopic.title.toLowerCase();
                           const isWhatPython = title.includes("what is python");
@@ -7996,19 +8044,61 @@ function Dashboard({ onBack }) {
               <span className="settings-status">{accountRole === "admin" ? "Admin access" : "Faculty access"}</span>
             </div>
 
-            <div className="workspace-card" id="assignment-management" style={{ padding: 22, marginBottom: 22 }}>
-              <h3 style={{ color: "#18334f", marginTop: 0 }}>Assignment Management</h3>
-              <p className="demo-note">Create and publish assignments for students. You can review submissions and provide marks and feedback from the Assignments section.</p>
-              <form onSubmit={saveAssignment} style={{ display: "grid", gap: 12 }}>
-                <label className="full-label">Assignment title<input value={assignmentTitle} onChange={(event) => setAssignmentTitle(event.target.value)} placeholder="e.g. Python loops practice" required /></label>
-                <label className="full-label">Course<select value={assignmentCourse} onChange={(event) => setAssignmentCourse(event.target.value)}>{["Python Programming", "Java Programming", "Web Development", "Data Structures", "Artificial Intelligence", "Database Management"].map((name) => <option key={name}>{name}</option>)}</select></label>
-                <label className="full-label">Instructions<textarea rows={4} value={assignmentDescription} onChange={(event) => setAssignmentDescription(event.target.value)} placeholder="Explain what students need to complete..." required /></label>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 }}><label className="full-label">Due date<input type="date" value={assignmentDueDate} onChange={(event) => setAssignmentDueDate(event.target.value)} required /></label><label className="full-label">Total marks<input type="number" min="1" max="1000" value={assignmentMarks} onChange={(event) => setAssignmentMarks(event.target.value)} required /></label></div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button className="primary-action" type="submit" disabled={assignmentSaving}>{assignmentSaving ? "Saving..." : editingAssignmentId ? "Update Assignment" : "Publish Assignment"}</button>{editingAssignmentId && <button className="secondary-action" type="button" onClick={() => { setEditingAssignmentId(null); setAssignmentTitle(""); setAssignmentDescription(""); setAssignmentMarks("100"); setAssignmentMessage("Edit cancelled."); }}>Cancel Edit</button>}</div>
-              </form>
-              {assignmentMessage && <p className="success-message">{assignmentMessage}</p>}{assignmentError && <p className="auth-error">{assignmentError}</p>}
-              <h4 style={{ color: "#18334f", marginTop: 22 }}>Manage published assignments</h4>
-              {assignments.filter((item) => item.createdBy === auth.currentUser?.uid || accountRole === "admin").map((item) => <div key={item.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", border: "1px solid #e1e8ef", borderRadius: 10, padding: 12, marginTop: 8 }}><div><strong>{item.title}</strong><p className="demo-note">{item.course} · Due {item.dueDate}</p></div><div style={{ display: "flex", gap: 7 }}><button type="button" className="secondary-action" onClick={() => editAssignment(item)}>Edit</button><button type="button" className="secondary-action" onClick={() => deleteAssignment(item.id)}>Delete</button><button type="button" className="secondary-action" onClick={() => { goTo("assignments"); loadAssignmentSubmissions(item.id); }}>Submissions</button></div></div>)}
+            <div className="workspace-card" id="assignment-management" style={{ padding: 22, marginBottom: 22, border: "1px solid #dce8f4", borderRadius: 16, background: "#ffffff", boxShadow: "0 5px 18px rgba(16,35,63,.06)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "8px 8px 18px", marginBottom: 8, borderBottom: "1px solid #e6eef7" }}>
+                <div style={{ width: 52, height: 52, borderRadius: 12, display: "grid", placeItems: "center", background: "linear-gradient(135deg,#13a69b,#07877f)", color: "white", fontSize: 27 }}>✓</div>
+                <div><h2 style={{ margin: 0, color: "#102b55", fontSize: 25 }}>Assignment Management</h2><p style={{ margin: "5px 0 0", color: "#38577e" }}>Create and manage assignments for students</p></div>
+              </div>
+
+              <section style={{ padding: 18, border: "1px solid #e0eaf5", borderRadius: 14, background: "linear-gradient(135deg,#ffffff,#f9fcff)", boxShadow: "0 3px 12px rgba(16,35,63,.04)" }}>
+                <div style={{ display: "inline-flex", alignItems: "center", padding: "8px 18px", borderRadius: 8, background: "#13a69b", color: "#fff", fontWeight: 800, fontSize: 17, marginBottom: 18 }}>{editingAssignmentId ? "Edit Assignment" : "Create New Assignment"}</div>
+                <form onSubmit={saveAssignment} style={{ display: "grid", gridTemplateColumns: "minmax(0,1.15fr) minmax(280px,1fr)", gap: "18px 22px" }}>
+                  <label className="full-label" style={{ color: "#102b55", fontWeight: 750 }}>▣ &nbsp; Assignment Title <span style={{ color: "#e11d48" }}>*</span>
+                    <input value={assignmentTitle} onChange={(event) => setAssignmentTitle(event.target.value)} placeholder="e.g. Python loops practice" required style={{ marginTop: 8, minHeight: 44, borderRadius: 9, border: "1px solid #cbdcf0", padding: "10px 14px", width: "100%", boxSizing: "border-box" }} />
+                  </label>
+                  <label className="full-label" style={{ color: "#102b55", fontWeight: 750 }}>🎓 &nbsp; Course
+                    <select value={assignmentCourse} onChange={(event) => setAssignmentCourse(event.target.value)} style={{ marginTop: 8, minHeight: 44, borderRadius: 9, border: "1px solid #cbdcf0", padding: "10px 14px", width: "100%", boxSizing: "border-box", background: "white" }}>{["Python Programming", "Java Programming", "Web Development", "Data Structures", "Artificial Intelligence", "Database Management"].map((name) => <option key={name}>{name}</option>)}</select>
+                  </label>
+                  <label className="full-label" style={{ color: "#102b55", fontWeight: 750 }}>▤ &nbsp; Instructions
+                    <textarea rows={4} value={assignmentDescription} onChange={(event) => setAssignmentDescription(event.target.value)} placeholder="Explain what students need to complete..." required style={{ marginTop: 8, minHeight: 105, borderRadius: 9, border: "1px solid #cbdcf0", padding: "12px 14px", width: "100%", boxSizing: "border-box", resize: "vertical" }} />
+                  </label>
+                  <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 12, alignContent: "start" }}>
+                    <label className="full-label" style={{ color: "#102b55", fontWeight: 750 }}>▦ &nbsp; Due Date
+                      <input type="date" value={assignmentDueDate} onChange={(event) => setAssignmentDueDate(event.target.value)} required style={{ marginTop: 8, minHeight: 44, borderRadius: 9, border: "1px solid #cbdcf0", padding: "10px", width: "100%", boxSizing: "border-box" }} />
+                    </label>
+                    <label className="full-label" style={{ color: "#102b55", fontWeight: 750 }}>★ &nbsp; Total Marks
+                      <input type="number" min="1" max="1000" value={assignmentMarks} onChange={(event) => setAssignmentMarks(event.target.value)} required style={{ marginTop: 8, minHeight: 44, borderRadius: 9, border: "1px solid #cbdcf0", padding: "10px", width: "100%", boxSizing: "border-box" }} />
+                    </label>
+                  </div>
+                  <div style={{ gridColumn: "1 / -1", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                    <button className="primary-action" type="submit" disabled={assignmentSaving} style={{ background: "#0da69d", border: 0, borderRadius: 9, padding: "12px 20px", color: "white", fontWeight: 800, cursor: "pointer" }}>{assignmentSaving ? "Saving..." : editingAssignmentId ? "✓ Update Assignment" : "➤ Publish Assignment"}</button>
+                    <button className="secondary-action" type="button" onClick={() => { setEditingAssignmentId(null); setAssignmentTitle(""); setAssignmentCourse("Python Programming"); setAssignmentDescription(""); setAssignmentDueDate(new Date().toLocaleDateString("en-CA")); setAssignmentMarks("100"); setAssignmentMessage(""); setAssignmentError(""); }} style={{ border: "1px solid #cbdcf0", borderRadius: 9, padding: "12px 20px", background: "#fff", color: "#315b9a", fontWeight: 750, cursor: "pointer" }}>↻ Reset</button>
+                    {editingAssignmentId && <button className="secondary-action" type="button" onClick={() => { setEditingAssignmentId(null); setAssignmentTitle(""); setAssignmentDescription(""); setAssignmentMarks("100"); setAssignmentMessage("Edit cancelled."); }} style={{ borderRadius: 9, padding: "12px 16px" }}>Cancel Edit</button>}
+                  </div>
+                </form>
+                {assignmentMessage && <p className="success-message" role="status">{assignmentMessage}</p>}{assignmentError && <p className="auth-error" role="alert">{assignmentError}</p>}
+              </section>
+
+              <section style={{ marginTop: 20, padding: 18, border: "1px solid #e0eaf5", borderRadius: 14, background: "#fff", boxShadow: "0 3px 12px rgba(16,35,63,.04)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+                  <h3 style={{ color: "#07877f", margin: 0, fontSize: 20 }}>☷ &nbsp; All Assignments</h3>
+                  <select aria-label="Filter assignments by course" value={assignmentCourseFilter} onChange={(event) => setAssignmentCourseFilter(event.target.value)} style={{ minWidth: 160, padding: "9px 12px", border: "1px solid #cbdcf0", borderRadius: 9, background: "white", color: "#102b55" }}><option>All Courses</option>{["Python Programming", "Java Programming", "Web Development", "Data Structures", "Artificial Intelligence", "Database Management"].map((name) => <option key={name}>{name}</option>)}</select>
+                </div>
+                {assignmentsLoading ? <p className="demo-note">Loading assignments...</p> : (() => {
+                  const managedAssignments = assignments.filter((item) => (item.createdBy === auth.currentUser?.uid || accountRole === "admin") && (assignmentCourseFilter === "All Courses" || item.course === assignmentCourseFilter)).sort((a,b) => String(a.dueDate || "").localeCompare(String(b.dueDate || "")));
+                  return managedAssignments.length === 0 ? <p className="demo-note">No assignments found. Publish your first assignment above.</p> : <div style={{ overflowX: "auto", border: "1px solid #dce8f4", borderRadius: 10 }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760, color: "#102b55", fontSize: 14 }}>
+                      <thead><tr style={{ background: "#eaf2fb", textAlign: "left" }}>{["#", "Title", "Course", "Due Date", "Total Marks", "Status", "Actions"].map((heading) => <th key={heading} style={{ padding: "12px 10px", whiteSpace: "nowrap", borderBottom: "1px solid #dce8f4" }}>{heading}</th>)}</tr></thead>
+                      <tbody>{managedAssignments.map((item, index) => <tr key={item.id} style={{ borderBottom: "1px solid #e8eef6" }}>
+                        <td style={{ padding: "11px 10px" }}>{index + 1}</td><td style={{ padding: "11px 10px", fontWeight: 650 }}>{item.title}</td><td style={{ padding: "11px 10px", whiteSpace: "nowrap" }}>{item.course}</td><td style={{ padding: "11px 10px", whiteSpace: "nowrap" }}>{item.dueDate || "—"}</td><td style={{ padding: "11px 10px" }}>{item.totalMarks || 100}</td><td style={{ padding: "11px 10px" }}><span style={{ background: "#d1faef", color: "#087b68", padding: "5px 10px", borderRadius: 20, fontWeight: 750, fontSize: 12 }}>{item.status === "draft" ? "Draft" : "Active"}</span></td>
+                        <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}><div style={{ display: "flex", gap: 6 }}><button type="button" onClick={() => setViewingAssignment(item)} style={{ border: "1px solid #cfe0f7", borderRadius: 8, padding: "7px 9px", color: "#1761b5", background: "#fff", cursor: "pointer" }}>◉ View</button><button type="button" onClick={() => editAssignment(item)} style={{ border: "1px solid #cfe0f7", borderRadius: 8, padding: "7px 9px", color: "#1761b5", background: "#eaf3ff", cursor: "pointer" }}>✎ Edit</button><button type="button" onClick={() => deleteAssignment(item.id)} style={{ border: "1px solid #f4d5dc", borderRadius: 8, padding: "7px 9px", color: "#c21f3a", background: "#fff7f8", cursor: "pointer" }}>▣ Delete</button></div></td>
+                      </tr>)}</tbody>
+                    </table>
+                  </div>;
+                })()}
+                {viewingAssignment && <div style={{ marginTop: 14, padding: 16, border: "1px solid #b9ddd8", borderRadius: 10, background: "#f2fbfa" }}><div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}><h4 style={{ margin: 0, color: "#087b75" }}>Assignment Details</h4><button type="button" onClick={() => setViewingAssignment(null)} className="secondary-action">Close</button></div><h3 style={{ marginBottom: 6, color: "#102b55" }}>{viewingAssignment.title}</h3><p><strong>Course:</strong> {viewingAssignment.course} &nbsp; <strong>Due:</strong> {viewingAssignment.dueDate} &nbsp; <strong>Total marks:</strong> {viewingAssignment.totalMarks || 100}</p><p style={{ whiteSpace: "pre-wrap" }}>{viewingAssignment.description || "No instructions provided."}</p></div>}
+                <p className="demo-note" style={{ marginBottom: 0, marginTop: 12 }}>Showing assignments created by your account{accountRole === "admin" ? " and other managed accounts" : ""}.</p>
+              </section>
             </div>
 
             <div className="workspace-card" style={{ padding: 22, marginBottom: 22 }}>
@@ -8066,42 +8156,96 @@ function Dashboard({ onBack }) {
         )}
 
         {/* STUDENT FEEDBACK & COURSE RATINGS */}
-        <section className="dashboard-section" id="course-feedback">
-          <div className="dashboard-section-heading">
-            <div><span>HELP US IMPROVE</span><h2>Student Feedback & Course Ratings</h2><p className="section-description">Rate each course from 1 to 5 stars and share what is working well or what could improve. You can edit or delete your own feedback at any time.</p></div>
+        <section className="dashboard-section" id="course-feedback" style={{ paddingBottom: 28 }}>
+          <div style={{
+            borderRadius: 22, padding: "30px 34px", marginBottom: 20, color: "#fff",
+            background: "linear-gradient(110deg,#102b50 0%,#075b78 58%,#08b7b0 100%)",
+            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20, flexWrap: "wrap",
+            boxShadow: "0 12px 28px rgba(7,91,120,.16)"
+          }}>
+            <div>
+              <div style={{ fontSize: 38, marginBottom: 8 }}>⭐</div>
+              <h2 style={{ color: "#fff", fontSize: "clamp(24px,3vw,34px)", margin: 0 }}>Student Feedback &amp; Course Ratings</h2>
+              <p style={{ color: "#e1f4fb", margin: "8px 0 0", fontSize: 16 }}>Share your experience and help us improve SmartLearn AI</p>
+            </div>
+            <div style={{ fontSize: 66, lineHeight: 1, padding: "12px 24px", borderRadius: 18, background: "rgba(255,255,255,.13)" }} aria-hidden="true">🎓 ⭐⭐⭐⭐⭐</div>
           </div>
+
           {feedbackError && <p className="auth-error" role="alert">{feedbackError}</p>}
           {feedbackMessage && <p className="success-message" role="status">{feedbackMessage}</p>}
-          {!["faculty", "admin"].includes(accountRole) && <form className="workspace-card" onSubmit={saveCourseFeedback} style={{ padding: 20, marginBottom: 20 }}>
-            <h3 style={{ color: "#18334f", marginTop: 0 }}>Share your course feedback</h3>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 14 }}>
+
+          <div className="workspace-card" style={{ padding: 20, marginBottom: 18, borderRadius: 18 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+              <div>
+                <h3 style={{ color: "#102b50", margin: 0, fontSize: 23 }}>📊 Course Rating Overview</h3>
+                <p className="demo-note" style={{ margin: "4px 0 0" }}>Rate each course and share your feedback</p>
+              </div>
+              {!['faculty', 'admin'].includes(accountRole) && <button type="button" className="primary-action" onClick={() => { setFeedbackFormOpen((open) => !open); setTimeout(() => document.getElementById("feedback-form")?.scrollIntoView({ behavior: "smooth", block: "center" }), 0); }}>
+                ✎ {feedbackFormOpen ? "Close Feedback Form" : "Give Feedback"}
+              </button>}
+            </div>
+            {feedbackLoading ? <p className="demo-note">Loading course ratings...</p> : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,285px),1fr))", gap: 14 }}>
+              {[
+                { name: "Python Programming", icon: "🐍", bg: "linear-gradient(135deg,#eaf4ff,#e0efff)" },
+                { name: "Java Programming", icon: "☕", bg: "linear-gradient(135deg,#fff0f3,#fce8ef)" },
+                { name: "Web Development", icon: "🌐", bg: "linear-gradient(135deg,#e9fbf7,#dcf7f1)" },
+                { name: "Data Structures", icon: "🗄️", bg: "linear-gradient(135deg,#f0efff,#e9e8ff)" },
+                { name: "Artificial Intelligence", icon: "🧠", bg: "linear-gradient(135deg,#e8fbf4,#dcf8ed)" },
+                { name: "Database Management", icon: "💾", bg: "linear-gradient(135deg,#fff7e8,#fff0d8)" }
+              ].map((course) => {
+                const reviews = courseFeedback.filter((item) => item.course === course.name);
+                const average = reviews.length ? reviews.reduce((sum, item) => sum + Number(item.rating || 0), 0) / reviews.length : 0;
+                const ownReview = reviews.find((item) => item.studentId === auth.currentUser?.uid);
+                const roundedStars = Math.round(average);
+                return <article key={course.name} style={{ background: course.bg, border: "1px solid rgba(180,205,230,.45)", borderRadius: 17, padding: 17, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                    <div style={{ fontSize: 38, width: 52, textAlign: "center", flexShrink: 0 }}>{course.icon}</div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <strong style={{ color: "#102b50", fontSize: 17 }}>{course.name}</strong>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 5 }}>
+                        <span aria-label={`${average.toFixed(1)} out of 5 stars`} style={{ color: "#f5b51b", fontSize: 20, letterSpacing: 1 }}>{"★".repeat(roundedStars)}<span style={{ color: "#cbd5e1" }}>{"★".repeat(5-roundedStars)}</span></span>
+                        <small style={{ color: "#405875" }}>{reviews.length ? `${average.toFixed(1)} (${reviews.length} ${reviews.length === 1 ? "review" : "reviews"})` : "No reviews yet"}</small>
+                      </div>
+                    </div>
+                  </div>
+                  {!['faculty', 'admin'].includes(accountRole) && <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+                    <button type="button" onClick={() => { setFeedbackCourse(course.name); setFeedbackRating(String(ownReview?.rating || 5)); setFeedbackComment(ownReview?.comment || ""); setFeedbackMessage(""); setFeedbackError(""); setFeedbackFormOpen(true); setTimeout(() => document.getElementById("feedback-form")?.scrollIntoView({ behavior: "smooth", block: "center" }), 0); }} style={{ border: 0, borderRadius: 999, padding: "9px 16px", background: "#d9edff", color: "#0756b5", fontWeight: 700, cursor: "pointer" }}>
+                      {ownReview ? "Edit Rating →" : "Rate Now →"}
+                    </button>
+                  </div>}
+                </article>;
+              })}
+            </div>}
+          </div>
+
+          {!['faculty', 'admin'].includes(accountRole) && feedbackFormOpen && <form id="feedback-form" className="workspace-card" onSubmit={saveCourseFeedback} style={{ padding: 22, marginBottom: 18, borderRadius: 18, scrollMarginTop: 24 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <h3 style={{ color: "#102b50", margin: 0 }}>✍️ Share your course feedback</h3>
+              <button type="button" className="secondary-action" onClick={() => setFeedbackFormOpen(false)}>Close</button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,250px),1fr))", gap: 14, marginTop: 16 }}>
               <label className="full-label">Course<select value={feedbackCourse} onChange={(e) => { const nextCourse = e.target.value; const ownReview = courseFeedback.find((item) => item.studentId === auth.currentUser?.uid && item.course === nextCourse); setFeedbackCourse(nextCourse); setFeedbackRating(String(ownReview?.rating || 5)); setFeedbackComment(ownReview?.comment || ""); }}>{["Python Programming", "Java Programming", "Web Development", "Data Structures", "Artificial Intelligence", "Database Management"].map((name) => <option key={name}>{name}</option>)}</select></label>
               <label className="full-label">Your rating<select value={feedbackRating} onChange={(e) => setFeedbackRating(e.target.value)}><option value="5">★★★★★ — Excellent</option><option value="4">★★★★☆ — Very good</option><option value="3">★★★☆☆ — Good</option><option value="2">★★☆☆☆ — Needs improvement</option><option value="1">★☆☆☆☆ — Poor</option></select></label>
             </div>
             <label className="full-label" style={{ display: "grid", gap: 7, marginTop: 14 }}>Your comments<textarea rows={4} maxLength={2000} value={feedbackComment} onChange={(e) => setFeedbackComment(e.target.value)} placeholder="Tell us about the lessons, explanations, exercises or areas we can improve..." required /></label>
             <button className="primary-action" type="submit" disabled={feedbackSaving} style={{ marginTop: 14 }}>{feedbackSaving ? "Saving..." : (courseFeedback.some((item) => item.studentId === auth.currentUser?.uid && item.course === feedbackCourse) ? "Update My Feedback" : "Submit Feedback")}</button>
           </form>}
-          <div className="workspace-card" style={{ padding: 20 }}>
-            <h3 style={{ color: "#18334f", marginTop: 0 }}>Course rating overview</h3>
-            {feedbackLoading ? <p className="demo-note">Loading course ratings...</p> : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 12 }}>
-              {["Python Programming", "Java Programming", "Web Development", "Data Structures", "Artificial Intelligence", "Database Management"].map((course) => {
-                const reviews = courseFeedback.filter((item) => item.course === course);
-                const average = reviews.length ? reviews.reduce((sum, item) => sum + Number(item.rating || 0), 0) / reviews.length : 0;
-                return <div key={course} style={{ border: "1px solid #e3eaf0", borderRadius: 12, padding: 14 }}><strong style={{ color: "#18334f" }}>{course}</strong><div style={{ color: "#d69e20", fontSize: 19, marginTop: 5 }}>{reviews.length ? `${average.toFixed(1)} / 5 ★` : "Not rated yet"}</div><small style={{ color: "#64748b" }}>{reviews.length} review(s)</small></div>;
-              })}
-            </div>}
-          </div>
-          <div className="workspace-card" style={{ padding: 20, marginTop: 18 }}>
-            <h3 style={{ color: "#18334f", marginTop: 0 }}>{["faculty", "admin"].includes(accountRole) ? "Student feedback received" : "My submitted feedback"}</h3>
+
+          <div className="workspace-card" style={{ padding: 20, borderRadius: 18 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+              <div><h3 style={{ color: "#102b50", margin: 0, fontSize: 22 }}>💬 {['faculty', 'admin'].includes(accountRole) ? "Student Feedback Received" : "My Submitted Feedback"}</h3><p className="demo-note" style={{ margin: "4px 0 0" }}>See what students are saying about their courses</p></div>
+              <span style={{ color: "#0b8790", fontWeight: 700 }}>{['faculty', 'admin'].includes(accountRole) ? `${courseFeedback.length} total reviews` : `${courseFeedback.filter((item) => item.studentId === auth.currentUser?.uid).length} of your reviews`}</span>
+            </div>
             {feedbackLoading ? <p className="demo-note">Loading feedback...</p> : (() => {
-              const visibleFeedback = ["faculty", "admin"].includes(accountRole) ? courseFeedback : courseFeedback.filter((item) => item.studentId === auth.currentUser?.uid);
-              return !visibleFeedback.length ? <p className="demo-note">No feedback has been submitted yet.</p> : <div style={{ display: "grid", gap: 12 }}>
-                {visibleFeedback.map((item) => <article key={item.id} style={{ border: "1px solid #e3eaf0", borderRadius: 12, padding: 14 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}><strong style={{ color: "#18334f" }}>{item.course}</strong><span style={{ color: "#d69e20", fontWeight: 700 }}>{"★".repeat(Math.max(0, Math.min(5, Number(item.rating) || 0)))}{"☆".repeat(5 - Math.max(0, Math.min(5, Number(item.rating) || 0)))}</span></div>
-                  {["faculty", "admin"].includes(accountRole) && <small style={{ color: "#64748b" }}>Student: {item.studentName || "Student"}</small>}
-                  <p style={{ color: "#526174", whiteSpace: "pre-wrap", margin: "8px 0" }}>{item.comment}</p>
-                  <small style={{ color: "#64748b" }}>Last updated: {item.updatedAt?.toDate ? item.updatedAt.toDate().toLocaleDateString() : "Just now"}</small>
-                  {item.studentId === auth.currentUser?.uid && <div style={{ display: "flex", gap: 8, marginTop: 10 }}><button type="button" className="secondary-action" onClick={() => editCourseFeedback(item)}>Edit</button><button type="button" className="secondary-action" style={{ color: "#b42318" }} onClick={() => deleteCourseFeedback(item)}>Delete</button></div>}
+              const visibleFeedback = ['faculty', 'admin'].includes(accountRole) ? courseFeedback : courseFeedback.filter((item) => item.studentId === auth.currentUser?.uid);
+              return !visibleFeedback.length ? <div style={{ padding: 24, textAlign: "center", background: "#f7fafc", borderRadius: 14 }}><div style={{ fontSize: 34 }}>💬</div><strong style={{ color: "#18334f" }}>No feedback submitted yet</strong><p className="demo-note">Your course reviews will appear here after you submit them.</p></div> : <div style={{ display: "grid", gap: 0 }}>
+                {visibleFeedback.map((item) => <article key={item.id} style={{ display: "grid", gridTemplateColumns: "minmax(145px,1fr) auto minmax(180px,2fr) auto", alignItems: "center", gap: 14, padding: "14px 8px", borderBottom: "1px solid #e8eef5" }}>
+                  <div><strong style={{ color: "#102b50" }}>{item.studentName || "Student"}</strong><div style={{ color: "#60758f", fontSize: 13 }}>{item.course}</div></div>
+                  <span style={{ color: "#f5b51b", fontSize: 18, whiteSpace: "nowrap" }}>{"★".repeat(Math.max(0, Math.min(5, Number(item.rating) || 0)))}{"☆".repeat(5 - Math.max(0, Math.min(5, Number(item.rating) || 0)))}</span>
+                  <p style={{ color: "#405875", margin: 0, minWidth: 0, overflowWrap: "anywhere" }}>{item.comment}</p>
+                  <div style={{ textAlign: "right", color: "#60758f", fontSize: 12, whiteSpace: "nowrap" }}>{item.updatedAt?.toDate ? item.updatedAt.toDate().toLocaleDateString() : "Just now"}
+                    {item.studentId === auth.currentUser?.uid && <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 7 }}><button type="button" className="secondary-action" onClick={() => editCourseFeedback(item)}>Edit</button><button type="button" className="secondary-action" style={{ color: "#b42318" }} onClick={() => deleteCourseFeedback(item)}>Delete</button></div>}
+                  </div>
                 </article>)}
               </div>;
             })()}
@@ -8247,67 +8391,82 @@ function Dashboard({ onBack }) {
           </div>
         </section>
 
-        {/* FEATURE 19 — PEER LEARNING CHALLENGES */}
+        {/* FEATURE 19 — UNLIMITED PEER LEARNING CHALLENGES */}
         <section className="dashboard-section" id="peer-challenges">
           <div className="dashboard-section-heading">
             <div>
               <span>PRACTISE • IMPROVE • ACHIEVE</span>
               <h2>Peer Learning Challenges</h2>
-              <p className="section-description">Take short course-based challenges, get instant feedback, save your scores and compare your best results with fellow learners.</p>
+              <p className="section-description">Practise without a question limit. Choose any course and level, get instant feedback, and save your score whenever you finish.</p>
             </div>
           </div>
 
           <div className="workspace-card" style={{ padding: 20, marginBottom: 18 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-              <div><h3 style={{ color: "#18334f", margin: "0 0 5px" }}>Choose your challenge</h3><p className="demo-note" style={{ margin: 0 }}>Each correct answer earns equal points. Your best score appears on the leaderboard.</p></div>
-              <select aria-label="Select a peer learning challenge" value={selectedPeerChallengeId} onChange={(event) => choosePeerChallenge(event.target.value)} style={{ minWidth: 230 }}>
-                {peerLearningChallenges.map((challenge) => <option key={challenge.id} value={challenge.id}>{challenge.title}</option>)}
-              </select>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,230px),1fr))", gap: 14 }}>
+              <label className="full-label">Choose course
+                <select value={peerCourse} onChange={(event) => changePeerCourseOrLevel("course", event.target.value)} disabled={peerSessionActive && peerQuestionNumber > 0}>
+                  {peerChallengeCourses.map((course) => <option key={course} value={course}>{course}</option>)}
+                </select>
+              </label>
+              <label className="full-label">Difficulty level
+                <select value={peerLevel} onChange={(event) => changePeerCourseOrLevel("level", event.target.value)} disabled={peerSessionActive && peerQuestionNumber > 0}>
+                  {peerChallengeLevels.map((level) => <option key={level} value={level}>{level}</option>)}
+                </select>
+              </label>
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "14px 0" }}>
-              <span style={{ background: "#eaf7f5", color: "#087f78", borderRadius: 20, padding: "6px 11px", fontSize: 12, fontWeight: 700 }}>{selectedPeerChallenge.course}</span>
-              <span style={{ background: "#f1f5f9", color: "#475569", borderRadius: 20, padding: "6px 11px", fontSize: 12, fontWeight: 700 }}>{selectedPeerChallenge.level}</span>
-              <span style={{ background: "#fff7e8", color: "#946200", borderRadius: 20, padding: "6px 11px", fontSize: 12, fontWeight: 700 }}>{selectedPeerChallenge.points} points</span>
+              <span style={{ background: "#eaf7f5", color: "#087f78", borderRadius: 20, padding: "6px 11px", fontSize: 12, fontWeight: 700 }}>{peerCourse}</span>
+              <span style={{ background: "#f1f5f9", color: "#475569", borderRadius: 20, padding: "6px 11px", fontSize: 12, fontWeight: 700 }}>{peerLevel}</span>
+              <span style={{ background: "#fff7e8", color: "#946200", borderRadius: 20, padding: "6px 11px", fontSize: 12, fontWeight: 700 }}>Unlimited questions</span>
             </div>
-            <p style={{ color: "#526174", marginTop: 0 }}>{selectedPeerChallenge.description}</p>
+            <div style={{ display: "flex", gap: 18, flexWrap: "wrap", padding: 14, background: "#f7fafc", borderRadius: 12, marginBottom: 16 }}>
+              <div><span className="demo-note">Question</span><strong style={{ display: "block", color: "#18334f", fontSize: 22 }}>{peerQuestionNumber}</strong></div>
+              <div><span className="demo-note">Correct answers</span><strong style={{ display: "block", color: "#139b91", fontSize: 22 }}>{peerCorrectCount}</strong></div>
+              <div><span className="demo-note">Accuracy</span><strong style={{ display: "block", color: "#18334f", fontSize: 22 }}>{peerQuestionNumber ? Math.round((peerCorrectCount / peerQuestionNumber) * 100) : 0}%</strong></div>
+            </div>
             {peerChallengeError && <p className="auth-error" role="alert">{peerChallengeError}</p>}
             {peerChallengeMessage && <p className="success-message" role="status">{peerChallengeMessage}</p>}
-            <form onSubmit={submitPeerChallenge}>
-              <div style={{ display: "grid", gap: 14 }}>
-                {selectedPeerChallenge.questions.map((question, index) => (
-                  <fieldset key={question.id} style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 16, minWidth: 0 }}>
-                    <legend style={{ padding: "0 7px", color: "#18334f", fontWeight: 700 }}>Question {index + 1}</legend>
-                    <p style={{ color: "#334155", fontWeight: 600, marginTop: 2 }}>{question.prompt}</p>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,210px),1fr))", gap: 9 }}>
-                      {question.options.map((option, optionIndex) => {
-                        const isChosen = Number(peerChallengeAnswers[question.id]) === optionIndex;
-                        const isCorrect = peerChallengeResult && optionIndex === question.answer;
-                        const isWrongChosen = peerChallengeResult && isChosen && optionIndex !== question.answer;
-                        return <label key={optionIndex} style={{ display: "flex", alignItems: "center", gap: 9, padding: 11, borderRadius: 9, border: `1px solid ${isCorrect ? "#20a36b" : isWrongChosen ? "#d94848" : isChosen ? "#139b91" : "#e2e8f0"}`, background: isCorrect ? "#ecfdf3" : isWrongChosen ? "#fff1f1" : isChosen ? "#effaf9" : "#fff", cursor: peerChallengeResult ? "default" : "pointer" }}>
-                          <input type="radio" name={question.id} value={optionIndex} checked={isChosen} disabled={!!peerChallengeResult} onChange={() => setPeerChallengeAnswers((current) => ({ ...current, [question.id]: optionIndex }))} />
-                          <span style={{ color: "#334155", fontSize: 14 }}>{option}</span>
-                        </label>;
-                      })}
-                    </div>
-                    {peerChallengeResult && <p style={{ color: "#167345", fontSize: 13, marginBottom: 0 }}><strong>{question.answer === Number(peerChallengeAnswers[question.id]) ? "Correct! " : "Explanation: "}</strong>{question.explanation}</p>}
-                  </fieldset>
-                ))}
+
+            {!peerSessionActive && !peerCurrentQuestion ? (
+              <div style={{ textAlign: "center", padding: "22px 10px" }}>
+                <h3 style={{ color: "#18334f", margin: "0 0 7px" }}>Ready to practise?</h3>
+                <p className="demo-note">There is no fixed question count. Keep going for as long as you like.</p>
+                <button type="button" className="primary-action" onClick={startPeerChallenge} disabled={peerQuestionLoading}>{peerQuestionLoading ? "Preparing question..." : "Start Challenge"}</button>
               </div>
-              {peerChallengeResult ? (
-                <div style={{ marginTop: 16, padding: 16, borderRadius: 12, background: "#effaf6", border: "1px solid #b9e8d2" }}>
-                  <h3 style={{ color: "#176b4a", margin: "0 0 5px" }}>Challenge completed: {peerChallengeResult.score}/{peerChallengeResult.totalPoints} points</h3>
-                  <p style={{ color: "#356653", margin: 0 }}>You answered {peerChallengeResult.correctCount} out of {peerChallengeResult.questionCount} questions correctly.</p>
-                  <button type="button" className="secondary-action" style={{ marginTop: 12 }} onClick={() => { setPeerChallengeAnswers({}); setPeerChallengeResult(null); setPeerChallengeMessage(""); setPeerChallengeError(""); }}>Try again</button>
+            ) : peerQuestionLoading ? (
+              <p className="demo-note" role="status">Generating your next {peerLevel.toLowerCase()} question...</p>
+            ) : peerCurrentQuestion ? (
+              <div>
+                <fieldset style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 18, minWidth: 0 }}>
+                  <legend style={{ padding: "0 7px", color: "#18334f", fontWeight: 700 }}>Question {peerQuestionNumber}</legend>
+                  <p style={{ color: "#334155", fontWeight: 600, fontSize: 17, marginTop: 3 }}>{peerCurrentQuestion.question}</p>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,220px),1fr))", gap: 10 }}>
+                    {peerCurrentQuestion.options.map((option, optionIndex) => {
+                      const chosen = peerSelectedAnswer === optionIndex;
+                      const correct = peerQuestionAnswered && optionIndex === peerCurrentQuestion.answer;
+                      const wrong = peerQuestionAnswered && chosen && !correct;
+                      return <button key={optionIndex} type="button" onClick={() => answerPeerQuestion(optionIndex)} disabled={peerQuestionAnswered} style={{ textAlign: "left", padding: 14, borderRadius: 10, border: `1px solid ${correct ? "#20a36b" : wrong ? "#d94848" : chosen ? "#139b91" : "#e2e8f0"}`, background: correct ? "#ecfdf3" : wrong ? "#fff1f1" : chosen ? "#effaf9" : "#fff", color: "#334155", cursor: peerQuestionAnswered ? "default" : "pointer" }}>
+                        <strong style={{ marginRight: 9 }}>{String.fromCharCode(65 + optionIndex)}.</strong>{option}
+                      </button>;
+                    })}
+                  </div>
+                  {peerQuestionAnswered && <div style={{ marginTop: 14, padding: 12, borderRadius: 9, background: peerSelectedAnswer === peerCurrentQuestion.answer ? "#effaf6" : "#fff8ed", color: "#334155" }}>
+                    <strong>{peerSelectedAnswer === peerCurrentQuestion.answer ? "Correct! " : "Not quite. "}</strong>{peerCurrentQuestion.explanation}
+                  </div>}
+                </fieldset>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 15 }}>
+                  {peerQuestionAnswered && <button type="button" className="primary-action" onClick={requestPeerQuestion} disabled={peerQuestionLoading}>{peerQuestionLoading ? "Loading..." : "Next Question →"}</button>}
+                  <button type="button" className="secondary-action" onClick={finishPeerChallenge} disabled={peerChallengeSaving || !peerQuestionAnswered}>{peerChallengeSaving ? "Saving score..." : "Finish & Save Score"}</button>
                 </div>
-              ) : <button type="submit" className="primary-action" style={{ marginTop: 16 }} disabled={peerChallengeSaving}>{peerChallengeSaving ? "Saving score..." : "Submit Challenge"}</button>}
-            </form>
+              </div>
+            ) : null}
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,300px),1fr))", gap: 18, alignItems: "start" }}>
             <div className="workspace-card" style={{ padding: 20 }}>
               <h3 style={{ color: "#18334f", marginTop: 0 }}>🏆 Leaderboard</h3>
-              <p className="demo-note">Top 10 best scores per learner and challenge.</p>
-              {peerChallengeLoading ? <p className="demo-note">Loading leaderboard...</p> : peerLeaderboard.length === 0 ? <p className="demo-note">No scores yet. Complete a challenge to be the first on the leaderboard.</p> : <div style={{ display: "grid", gap: 9 }}>
+              <p className="demo-note">Best saved score for each learner, course and level.</p>
+              {peerChallengeLoading ? <p className="demo-note">Loading leaderboard...</p> : peerLeaderboard.length === 0 ? <p className="demo-note">No scores yet. Finish a challenge to appear here.</p> : <div style={{ display: "grid", gap: 9 }}>
                 {peerLeaderboard.map((item, index) => <div key={`${item.challengeId}-${item.studentId}-${index}`} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: 11, borderRadius: 10, background: index === 0 ? "#fff8e8" : "#f7fafc", border: "1px solid #e7edf3" }}>
                   <div style={{ minWidth: 0 }}><strong style={{ color: "#18334f" }}>{index + 1}. {item.studentName || "Learner"}</strong><div className="demo-note" style={{ marginTop: 3 }}>{item.challengeTitle || item.course || "Challenge"}</div></div>
                   <strong style={{ color: "#139b91", whiteSpace: "nowrap" }}>{item.score}/{item.totalPoints}</strong>
@@ -8317,11 +8476,11 @@ function Dashboard({ onBack }) {
             <div className="workspace-card" style={{ padding: 20 }}>
               <h3 style={{ color: "#18334f", marginTop: 0 }}>Your Challenge History</h3>
               {peerChallengeLoading ? <p className="demo-note">Loading your attempts...</p> : peerChallengeSubmissions.filter((item) => item.studentId === auth.currentUser?.uid).length === 0 ? <p className="demo-note">Your completed challenges will appear here.</p> : <div style={{ display: "grid", gap: 9 }}>
-                {peerChallengeSubmissions.filter((item) => item.studentId === auth.currentUser?.uid).slice(0, 8).map((item) => <div key={item.id} style={{ padding: 11, border: "1px solid #e7edf3", borderRadius: 10 }}><strong style={{ color: "#18334f" }}>{item.challengeTitle}</strong><div className="demo-note" style={{ marginTop: 4 }}>{item.course} · {item.correctCount}/{item.questionCount} correct</div><strong style={{ color: "#139b91" }}>{item.score}/{item.totalPoints} points</strong></div>)}
+                {peerChallengeSubmissions.filter((item) => item.studentId === auth.currentUser?.uid).slice(0, 8).map((item) => <div key={item.id} style={{ padding: 11, border: "1px solid #e7edf3", borderRadius: 10 }}><strong style={{ color: "#18334f" }}>{item.challengeTitle}</strong><div className="demo-note" style={{ marginTop: 4 }}>{item.course} · {item.level || "Beginner"} · {item.correctCount}/{item.questionCount} correct</div><strong style={{ color: "#139b91" }}>{item.score}/{item.totalPoints} points</strong></div>)}
               </div>}
             </div>
           </div>
-          <p className="demo-note" style={{ marginTop: 14 }}>Challenge answers are checked in the browser and each result is saved in Firestore <code>challengeSubmissions</code>. The leaderboard displays each learner's best score for each challenge.</p>
+          <p className="demo-note" style={{ marginTop: 14 }}>Questions are generated by the SmartLearn AI backend. Scores are saved in Firestore <code>challengeSubmissions</code> when students finish a session.</p>
         </section>
 
         {/* COURSE DISCUSSION FORUM */}
