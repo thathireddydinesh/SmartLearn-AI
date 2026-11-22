@@ -45,7 +45,7 @@ FIREBASE_PROJECT_ID = os.getenv(
 try:
     service_account_path = os.getenv(
         "GOOGLE_APPLICATION_CREDENTIALS",
-        str(Path(__file__).resolve().parent / "firebase-service-account.json")
+        "./firebase-service-account.json"
     ).strip()
 
     service_account_file = Path(service_account_path)
@@ -119,28 +119,20 @@ except Exception as error:
 
 
 # ============================================================
-# CORS CONFIGURATION (LOCAL + RENDER/VERCEL)
+# CORS CONFIGURATION
 # ============================================================
-
-# Set CORS_ORIGINS in Render to a comma-separated list of exact frontend
-# origins, for example:
-# https://your-project.vercel.app,https://www.your-custom-domain.com
-# Do not include paths or trailing slashes in the Render value.
-_default_cors_origins = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "https://smart-learn-jzxbb9vz8-dines5.vercel.app",
-]
-_configured_cors_origins = os.getenv("CORS_ORIGINS", "")
-CORS_ORIGINS = list(dict.fromkeys(
-    origin.strip().rstrip("/")
-    for origin in (_default_cors_origins + _configured_cors_origins.split(","))
-    if origin and origin.strip()
-))
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
+    # Production frontend and local development origins.
+    allow_origins=[
+        "https://smart-learn-ai-rho.vercel.app",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    # Also allow Vercel preview deployments for this app.
+    # This is restricted to *.vercel.app hosts, not arbitrary websites.
+    allow_origin_regex=r"https://[a-zA-Z0-9-]+\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -1332,7 +1324,6 @@ def _health_payload():
         "firebase": "connected" if FIREBASE_READY else "not connected",
         "firebase_admin": FIREBASE_READY,
         "firebase_project_id": FIREBASE_PROJECT_ID,
-        "cors_origins_configured": len(CORS_ORIGINS),
         "ai_mode": "external-provider" if ai_key_present else "not-configured",
         "ai_configured": ai_key_present,
         "ai_provider": os.getenv("AI_PROVIDER", "openai-compatible"),
